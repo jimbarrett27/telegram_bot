@@ -9,6 +9,8 @@ def send_message_to_me(message: str):
 
     response_data = {"chat_id": get_telegram_user_id(), "text": message}
 
+    print(response_data)
+
     requests.post(
         f"https://api.telegram.org/bot{get_telegram_bot_key()}/sendMessage",
         json=response_data,
