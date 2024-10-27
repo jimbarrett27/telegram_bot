@@ -22,3 +22,15 @@ INTERESTING_ARXIV_CATEGORIES = set(
         "q-bio.QM",
     ]
 )
+
+PV_KEYWORDS = set(
+    [
+        "drug",
+        "pharma",
+        "adverse",
+        "reaction",
+        "medic",
+        "duplic",
+        "linkage",
+    ]
+)

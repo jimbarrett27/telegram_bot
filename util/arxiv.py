@@ -2,7 +2,7 @@
 Utilities for working with preprints from arxiv and the arxiv site and feeds
 """
 
-from util.constants import INTERESTING_ARXIV_CATEGORIES
+from util.constants import INTERESTING_ARXIV_CATEGORIES, PV_KEYWORDS
 
 import feedparser  # type: ignore
 from html2text import html2text
@@ -26,8 +26,11 @@ def get_latest_ids_and_abstracts():
         url = get_arxiv_rss_url(category)
         rss_content = feedparser.parse(url)
         for entry in rss_content["entries"]:
+            abstract = html2text(entry["summary"])
+            if not any(k in abstract for k in PV_KEYWORDS):
+                continue
             paper_id = entry["id"].split("/")[-1]
-            paper_id_to_abstract[paper_id] = html2text(entry["summary"])
+            paper_id_to_abstract[paper_id] = abstract
 
     return paper_id_to_abstract
 
