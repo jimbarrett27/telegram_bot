@@ -1,20 +1,11 @@
-[tool.poetry]
+[project]
 name = "telegram-bot"
 version = "0.1.0"
-description = "A bot for interacting with me via telegram"
-authors = ["Jim Barrett <jimbarrett27@gmail.com>"]
+description = "Add your description here"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-google-cloud-secret-manager = "^2.20.2"
-google-cloud-storage = "^2.18.2"
-requests = "^2.32.3"
-feedparser = "^6.0.11"
-html2text = "^2024.2.26"
-tqdm = "^4.66.5"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.12"
+dependencies = [
+    "google-cloud-secret-manager>=2.23.3",
+    "requests>=2.32.3",
+    "sqlalchemy>=2.0.41",
+]
