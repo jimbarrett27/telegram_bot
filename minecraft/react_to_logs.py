@@ -4,7 +4,7 @@ import subprocess
 import threading
 import queue
 
-PLAYER_JOINED_REGEX = re.compile(r"^Player \[\w+\] joined the game$", re.IGNORECASE)
+PLAYER_JOINED_REGEX = re.compile(r"joined the game", re.IGNORECASE)
 TIMESTAMP_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 
 LOG_QUEUE = None
@@ -38,8 +38,7 @@ def follow_journal(unit: str) -> queue.Queue[str]:
 def react_to_logs():
     queue = get_log_queue()
     while not queue.empty():
-        line = queue.get()
-        
-        if PLAYER_JOINED_REGEX.match(line):
-            print(line)
+        line = queue.get() 
+        if PLAYER_JOINED_REGEX.search(line):
+            send_message_to_me(line)
         
