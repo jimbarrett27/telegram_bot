@@ -11,6 +11,7 @@ LOG_QUEUE = None
 
 
 def get_log_queue() -> queue.Queue[str]:
+    global LOG_QUEUE
     if LOG_QUEUE is None:
         LOG_QUEUE = follow_journal("minecraft.service")
     return LOG_QUEUE
