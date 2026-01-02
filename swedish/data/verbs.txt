@@ -1,0 +1,296 @@
+att arbeta
+att bada
+att baka
+att berätta
+att betala
+att boka
+att börja
+att cykla
+att dansa
+att diskuterar
+att docka
+att duscha
+att fastna
+att fika
+att flytta
+att fråga
+att förklara
+att gilla
+att grilla
+att gäspa
+att hälsa
+att hämta
+att hoppas
+att hosta
+att hänga
+att höra
+att jobba
+att kalla
+att kasta
+att klättra
+att kolla
+att kosta
+att krama
+att laga
+att leka
+att leta
+att lita
+att lova
+att lugna
+att lukta
+att lyssna
+att låna
+att lära
+att läsa
+att mår
+att måla
+att ordna
+att parkera
+att prata
+att räkna
+att sakna
+att satsa
+att simma
+att skicka
+att skratta
+att skynda
+att sluta
+att smaka
+att snöa
+att spara
+att spela
+att stanna
+att städa
+att svara
+att titta
+att tvätta
+att vakna
+att vänta
+att älska
+att öppna
+att använda
+att behöva
+att besöka
+att beställa
+att betona
+att bygga
+att böja
+att drömma
+att följa
+att föda
+att försöka
+att glömma
+att hjälpa
+att hyra
+att hända
+att köpa
+att köra
+att leda
+att ringa
+att röka
+att sköta
+att stänga
+att svänga
+att sänka
+att söka
+att tåla
+att tänka
+att upträda
+att växa
+att åka
+att bo
+att bre
+att bry
+att fly
+att glo
+att klä
+att må
+att nå
+att rök
+att sy
+att tro
+att be
+att bita
+att bjuder
+att bli
+att brinna
+att bryta
+att bära
+att bör
+att dricka
+att dra
+att duga
+att dö
+att dölja
+att falla
+att fara
+att finna
+att finnas
+att flyga
+att frysa
+att få
+att förstå
+att försvinna
+att ge
+att gråta
+att gå
+att göra
+att ha
+att heta
+att hinna
+att hugga
+att hålla
+att kan
+att kliva
+att knyta
+att komma
+att krypa
+att kunna
+att le
+att leva
+att ligga
+att ljuga
+att låta
+att lägga
+att njuta
+att rida
+att rinna
+att se
+att sitta
+att sjunga
+att sjunka
+att skina
+att skilja
+att skriva
+att skära
+att slippa
+att slå
+att slåss
+att smyga
+att sova
+att spricka
+att sprida
+att springa
+att stiga
+att stjäla
+att stå
+att suga
+att supa
+att svälta
+att svära
+att säga
+att sälja
+att sätta
+att ta
+att tvinga
+att vara
+att veta
+att vika
+att vilja
+att vinna
+att visa
+att välja
+att vänja
+att växa
+att äta
+att bjuda in
+att bryta in
+att flytta in
+att logga in
+att andas in
+att bjuda ut
+att bjuda på
+att gå ut
+att dela ut
+att hyra ut
+att ladda ut
+att se ut
+att skriva ut
+att ställa ut
+att prata ut
+att ge upp
+att pigga upp
+att ringa upp
+att se upp
+att skriva upp
+att snygga upp
+att söka upp
+att ta upp
+att trappa upp
+att äta upp
+att dricka upp
+att låsa upp
+att packa upp
+att duka av
+att klä av
+att koppla av
+att stänga av
+att svalna av
+att ta av
+att vänja av
+att skriva ner
+att ladda ner
+att lägga ner
+att rösta ner
+att slå ner
+att trappa ner
+att komma på
+att lita på
+att hälsa på
+att klä på
+att ladda på
+att passa på
+att pröva på
+att sätta på
+att titta på
+att tycka om
+att bry sig om
+att göra om
+att skriva om
+att tänka om
+att se efter
+att tänka efter
+att leta efter
+att längta efter
+att hålla med
+att följa med
+att ta med
+att komma ihåg
+att komma fram
+att komma undan
+att komma loss
+att känna till
+att lägga till
+att se till
+att slå till
+att boka om
+att bygga om
+att klä om
+att tala om
+att hålla på
+att känna igen
+att sätta igång
+att dyka upp
+att ge ut
+att gå bort
+att gå med
+att gå på
+att göra av med
+att göra bort sig
+att hitta på
+att hålla ut
+att hänga med
+att höra av sig
+att klara av
+att lägga av
+att lägga på
+att se fram emot
+att skilja sig
+att skämma bort
+att slå fast
+att ställa in
+att ställa till
+att ställa upp
+att ta emot
+att ta i
+att vänja sig vid
