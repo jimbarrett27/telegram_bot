@@ -106,6 +106,13 @@ def get_due_cards() -> List[FlashCard]:
         ))
     return cards
 
+def get_all_words() -> List[str]:
+    conn = get_db_connection()
+    cursor = conn.execute('SELECT word_to_learn FROM flashcards')
+    rows = cursor.fetchall()
+    conn.close()
+    return [row['word_to_learn'] for row in rows]
+
 def count_cards() -> int:
     conn = get_db_connection()
     cursor = conn.execute('SELECT COUNT(*) FROM flashcards')
