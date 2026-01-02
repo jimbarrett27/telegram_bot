@@ -1,7 +1,7 @@
 import sqlite3
 import time
 from typing import List, Optional
-from swedish.flash_card import FlashCard
+from swedish.flash_card import FlashCard, WordType
 
 DB_NAME = "flashcards.db"
 
@@ -16,6 +16,7 @@ def init_db():
         conn.execute('''
             CREATE TABLE IF NOT EXISTS flashcards (
                 word_to_learn TEXT PRIMARY KEY,
+                word_type TEXT,
                 n_times_seen INTEGER,
                 difficulty REAL,
                 stability REAL,
@@ -23,28 +24,24 @@ def init_db():
                 next_review_min_epoch INTEGER
             )
         ''')
+        # Simple migration for existing DB
+        try:
+            conn.execute('ALTER TABLE flashcards ADD COLUMN word_type TEXT')
+        except sqlite3.OperationalError:
+            # Column likely acts exists
+            pass
+            
     conn.close()
 
-def add_card(word: str):
+def add_card(word: str, word_type: WordType = WordType.UNKNOWN):
     conn = get_db_connection()
-    # Default initial values for FSRS (can be tuned or taken from constants if available)
-    # Using defaults that make sense or placeholders that will be updated on first review.
-    # However, FlashCard dataclass doesn't specify defaults for these, 
-    # so we should probably initialize them to "new card" state.
-    # We'll use 0 or initial values. 
-    # Let's assume a new card hasn't been seen.
-    
-    # Based on fsrs.py updates, initial difficulty/stability depend on the first grade.
-    # We will store initial "zero" state.
-    
     try:
         with conn:
             conn.execute('''
-                INSERT INTO flashcards (word_to_learn, n_times_seen, difficulty, stability, last_review_epoch, next_review_min_epoch)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (word, 0, 0.0, 0.0, 0, 0))
+                INSERT INTO flashcards (word_to_learn, word_type, n_times_seen, difficulty, stability, last_review_epoch, next_review_min_epoch)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (word, word_type.name, 0, 0.0, 0.0, 0, 0))
     except sqlite3.IntegrityError:
-        # Card already exists
         pass
     finally:
         conn.close()
@@ -56,8 +53,13 @@ def get_card(word: str) -> Optional[FlashCard]:
     conn.close()
     
     if row:
+        val = row['word_type']
+        # Handle existing rows or nulls defaults
+        w_type = WordType[val] if val else WordType.UNKNOWN
+        
         return FlashCard(
             word_to_learn=row['word_to_learn'],
+            word_type=w_type,
             n_times_seen=row['n_times_seen'],
             difficulty=row['difficulty'],
             stability=row['stability'],
@@ -75,7 +77,8 @@ def update_card(card: FlashCard):
                 difficulty = ?,
                 stability = ?,
                 last_review_epoch = ?,
-                next_review_min_epoch = ?
+                next_review_min_epoch = ?,
+                word_type = ?
             WHERE word_to_learn = ?
         ''', (
             card.n_times_seen,
@@ -83,6 +86,7 @@ def update_card(card: FlashCard):
             card.stability,
             card.last_review_epoch,
             card.next_review_min_epoch,
+            card.word_type.name,
             card.word_to_learn
         ))
     conn.close()
@@ -96,8 +100,12 @@ def get_due_cards() -> List[FlashCard]:
     
     cards = []
     for row in rows:
+        val = row['word_type']
+        w_type = WordType[val] if val else WordType.UNKNOWN
+        
         cards.append(FlashCard(
             word_to_learn=row['word_to_learn'],
+            word_type=w_type,
             n_times_seen=row['n_times_seen'],
             difficulty=row['difficulty'],
             stability=row['stability'],
@@ -112,6 +120,43 @@ def get_all_words() -> List[str]:
     rows = cursor.fetchall()
     conn.close()
     return [row['word_to_learn'] for row in rows]
+
+def populate_db():
+    from util.constants import REPO_ROOT
+
+    data_dir = REPO_ROOT / "swedish/data"
+    
+    files_map = {
+        "verbs.txt": WordType.VERB,
+        "nouns.txt": WordType.NOUN,
+        "adjectives.txt": WordType.ADJECTIVE
+    }
+
+    print(f"Populating database from {data_dir}...")
+    
+    existing_words = set(get_all_words())
+    print(f"Found {len(existing_words)} existing words in DB.")
+
+    for filename, word_type in files_map.items():
+        filepath = data_dir / filename
+        if not filepath.exists():
+            print(f"Warning: {filename} not found at {filepath}")
+            continue
+            
+        with open(filepath, "r") as f:
+            count = 0
+            skipped = 0
+            for line in f:
+                word = line.strip()
+                if word:
+                    if word in existing_words:
+                        skipped += 1
+                        continue
+                        
+                    add_card(word, word_type)
+                    count += 1
+            print(f"Added {count} {word_type.name.lower()}s from {filename} (skipped {skipped} existing)")
+
 
 def count_cards() -> int:
     conn = get_db_connection()
