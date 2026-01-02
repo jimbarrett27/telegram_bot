@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from dataclasses import dataclass
 
 class WordType(Enum):
     VERB = auto()
