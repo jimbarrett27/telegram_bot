@@ -2,8 +2,30 @@ from telegram_bot.telegram_bot import send_message
 from swedish.database import get_all_words, add_card, get_due_cards
 from swedish.flash_card import WordType
 import random
+from util.constants import REPO_ROOT
+import json
+from llm.llm_util import get_llm_response
+from enum import Enum, auto
+
+class ConversationState(Enum):
+    IDLE = auto()
+    AWAITING_PRACTICE_ANSWER = auto()
+
+# Map<chat_id, {state: ConversationState, context: dict}>
+USER_STATES = {}
+
+def get_llm_prompt_template(filename: str):
+
+    return (REPO_ROOT / "swedish/prompts") / filename
 
 def handle_message(message: str, chat_id: str):
+    
+    # Check for active conversation state
+    if chat_id in USER_STATES and USER_STATES[chat_id]['state'] != ConversationState.IDLE:
+        current_state_info = USER_STATES[chat_id]
+        if current_state_info['state'] == ConversationState.AWAITING_PRACTICE_ANSWER:
+            handle_practice_answer(message, chat_id, current_state_info['context'])
+        return
 
     command = message.split()[0]
 
@@ -28,26 +50,96 @@ def add_word(message: str, chat_id: str):
         send_message(chat_id, "Word already in dictionary")
         return True
 
-    # TODO: validate word
+    # Validate word with LLM
+    try:
+        response = get_llm_response(
+            str(get_llm_prompt_template("validate_word.jinja2")),
+            {"word": word, "word_type": WORD_TYPE_STR_TO_VERBOSE_WORD_TYPE.get(word_type_str, word_type_str)}
+        )
+        # Clean up code blocks if present
+        clean_response = response.replace("```json", "").replace("```", "").strip()
+        validation_result = json.loads(clean_response)
+        
+        if not validation_result.get("valid", False):
+            send_message(chat_id, f"Logic says no: {validation_result.get('reasoning', 'No reason provided')}")
+            return False
+
+    except Exception as e:
+        send_message(chat_id, f"Error validating word: {e}")
+        return False
 
     send_message(chat_id, f'Adding the word "{word}" as a {word_type_str}')
     add_card(word, WORD_TYPE_STR_TO_ENUM[word_type_str])
 
     return True
 
+def handle_practice_answer(message: str, chat_id: str, context: dict):
+    shown_word = context.get('shown_word')
+    
+    try:
+        response = get_llm_response(
+            str(get_llm_prompt_template("grade_translation.jinja2")),
+            {"swedish_word": shown_word, "user_translation": message}
+        )
+        clean_response = response.replace("```json", "").replace("```", "").strip()
+        result = json.loads(clean_response)
+        
+        if result.get('correct'):
+            send_message(chat_id, f"✅ Correct!\n{result.get('feedback')}")
+            # TODO: update score
+        else:
+            send_message(chat_id, f"❌ Incorrect.\nCorrect translation: {result.get('correct_translation')}\nFeedback: {result.get('feedback')}")
+
+    except Exception as e:
+        send_message(chat_id, f"Error grading answer: {e}")
+    
+    # Reset state to IDLE
+    USER_STATES[chat_id] = {'state': ConversationState.IDLE, 'context': {}}
+
 def practise_random_word(_, chat_id):
     
-    print('here?')
-
     due_cards = get_due_cards()
     chosen_card = random.choice(due_cards)
 
-    # TODO: modify word form
+    # Modify word form using LLM
+    word_to_show = chosen_card.word_to_learn
+    try:
+        template = None
+        params = {}
+        
+        if chosen_card.type == WordType.NOUN:
+            template = "modify_noun_form.jinja2"
+            params = {"noun": chosen_card.word_to_learn}
+        elif chosen_card.type == WordType.VERB:
+            template = "modify_verb_form.jinja2"
+            params = {"verb": chosen_card.word_to_learn}
+        elif chosen_card.type == WordType.ADJECTIVE:
+            template = "modify_adjective_form.jinja2"
+            params = {"adjective": chosen_card.word_to_learn}
+            
+        if template:
+            response = get_llm_response(str(get_llm_prompt_template(template)), params)
+            clean_response = response.replace("```json", "").replace("```", "").strip()
+            forms = json.loads(clean_response)
+            
+            if forms:
+                form_type, modified_word = random.choice(list(forms.items()))
+                word_to_show = f"{modified_word} ({form_type})"
 
-    send_message(chat_id, f"Give a definition for the word;\n{chosen_card.word_to_learn}")
+    except Exception as e:
+        send_message(chat_id, f"Error modifying word form: {e}")
+        # Fallback to original word
 
-    # TODO: grade the definition
-    # TODO: update score
+    send_message(chat_id, f"Give a definition for the word;\n{word_to_show}")
+    
+    # Set state
+    USER_STATES[chat_id] = {
+        'state': ConversationState.AWAITING_PRACTICE_ANSWER,
+        'context': {
+            'word_to_learn': chosen_card.word_to_learn,
+            'shown_word': word_to_show,
+        }
+    }
 
 COMMAND_TO_MESSAGE_HANDLER = {
     "add": add_word,
@@ -59,4 +151,10 @@ WORD_TYPE_STR_TO_ENUM = {
     'verb': WordType.VERB,
     'adj': WordType.ADJECTIVE,
     'auto': WordType.UNKNOWN
+}
+
+WORD_TYPE_STR_TO_VERBOSE_WORD_TYPE = {
+    'noun': "noun",
+    'verb': "verb",
+    'adj': "adjective"
 }
