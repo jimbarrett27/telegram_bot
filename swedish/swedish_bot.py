@@ -107,19 +107,20 @@ def practise_random_word(_, chat_id):
         template = None
         params = {}
         
-        if chosen_card.type == WordType.NOUN:
+        if chosen_card.word_type == WordType.NOUN:
             template = "modify_noun_form.jinja2"
             params = {"noun": chosen_card.word_to_learn}
-        elif chosen_card.type == WordType.VERB:
+        elif chosen_card.word_type == WordType.VERB:
             template = "modify_verb_form.jinja2"
             params = {"verb": chosen_card.word_to_learn}
-        elif chosen_card.type == WordType.ADJECTIVE:
+        elif chosen_card.word_type == WordType.ADJECTIVE:
             template = "modify_adjective_form.jinja2"
             params = {"adjective": chosen_card.word_to_learn}
             
         if template:
             response = get_llm_response(str(get_llm_prompt_template(template)), params)
             clean_response = response.replace("```json", "").replace("```", "").strip()
+
             forms = json.loads(clean_response)
             
             if forms:

@@ -6,7 +6,8 @@ from swedish.database import init_db, populate_db
 from swedish.swedish_bot import handle_message as handle_message_swedish
 
 COMMAND_TO_MESSAGE_HANDLER = {
-    "🇸🇪": handle_message_swedish
+    "🇸🇪": handle_message_swedish,
+    "sv": handle_message_swedish
 }
 
 def react_to_message(text: str, chat_id: str):
