@@ -2,14 +2,14 @@ from langchain_mistralai import ChatMistralAI
 from langchain_core.prompts import PromptTemplate
 from gcp_util.secrets import get_mistral_api_key
 
-def get_llm_response(template_path: str, params: dict, model_name: str = "mistral-small-latest") -> str:
+def get_llm_response(template_path: str, params: dict, model_name: str = "mistral-large-latest") -> str:
     """
     Generates a response from the LLM based on a Jinja2 template file and parameters.
 
     Args:
         template_path: The absolute path to the Jinja2 template file.
         params: A dictionary of parameters to populate the template.
-        model_name: The name of the Mistral model to use. Defaults to "mistral-small-latest".
+        model_name: The name of the Mistral model to use. Defaults to "mistral-large-latest".
 
     Returns:
         The string response from the LLM.

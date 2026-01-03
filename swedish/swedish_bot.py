@@ -125,10 +125,10 @@ def practise_random_word(_, chat_id):
             
             if forms:
                 form_type, modified_word = random.choice(list(forms.items()))
-                word_to_show = f"{modified_word} ({form_type})"
+                word_to_show = f"{modified_word}"
 
     except Exception as e:
-        send_message(chat_id, f"Error modifying word form: {e}")
+        send_message(chat_id, f"Error modifying word form: {e}. Falling back to original word.")
         # Fallback to original word
 
     send_message(chat_id, f"Give a definition for the word;\n{word_to_show}")
