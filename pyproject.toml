@@ -8,4 +8,6 @@ dependencies = [
     "google-cloud-secret-manager>=2.23.3",
     "requests>=2.32.3",
     "sqlalchemy>=2.0.41",
+    "langchain>=0.3.0",
+    "langchain-mistralai>=0.2.0",
 ]

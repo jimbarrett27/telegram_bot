@@ -70,3 +70,16 @@ def get_telegram_secret_token() -> str:
     )
 
     return get_gcp_secret(secret)
+
+
+@lru_cache(maxsize=1)
+def get_mistral_api_key() -> str:
+    """
+    Fetches the token for the mistral api
+    """
+
+    secret = GCPSecret(
+        project_id="personal-website-318015", secret_id="MISTRAL_API_KEY", version=1
+    )
+
+    return get_gcp_secret(secret)
