@@ -1,6 +1,9 @@
 import requests
 from gcp_util.secrets import get_telegram_bot_key, get_telegram_user_id
 from functools import lru_cache
+from util.logging_util import setup_logger, log_telegram_message_sent
+
+logger = setup_logger(__name__)
 
 @lru_cache
 def get_telegram_api_url() -> str:
@@ -16,6 +19,9 @@ def send_message(chat_id: int, message: str):
     """
     api_url = get_telegram_api_url()
     response_data = {"chat_id": chat_id, "text": message}
+    
+    # Log the outgoing message
+    log_telegram_message_sent(logger, str(chat_id), message)
     
     requests.post(
         f"{api_url}/sendMessage",
