@@ -1,4 +1,5 @@
 from enum import Enum
+import logging
 import math
 import time
 from swedish.flash_card import FlashCard
@@ -141,6 +142,18 @@ def update_card(card: FlashCard, grade: Grade):
         next_review_min_epoch=current_epoch + new_interval_seconds,
         word_to_learn=card.word_to_learn
     )
+
+
+def log_fsrs_update(logger: logging.Logger, card: FlashCard, new_card: FlashCard, grade: Grade):
+    """
+    Logs an FSRS card update.
+    """
+    interval_days = (new_card.next_review_min_epoch - new_card.last_review_epoch) / (24 * 3600)
+    logger.info(f"📊 FSRS Update - '{card.word_to_learn}' - Grade: {grade.name}")
+    logger.info(f"  Difficulty: {card.difficulty:.2f} ➡️ {new_card.difficulty:.2f}")
+    logger.info(f"  Stability: {card.stability:.2f} ➡️ {new_card.stability:.2f}")
+    logger.info(f"  Times Seen: {card.n_times_seen} ➡️ {new_card.n_times_seen}")
+    logger.info(f"  New Interval: {interval_days:.2f} days")
 
 
 

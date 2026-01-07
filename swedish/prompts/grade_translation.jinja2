@@ -3,9 +3,15 @@ A student was shown the Swedish word/phrase: "{{ swedish_word }}"
 The student provided the following English translation: "{{ user_translation }}"
 
 Evaluate if the student's translation is correct. It doesn't have to be a perfect dictionary definition, but it must capture the core meaning accurately.
+Evaluate the student's translation and assign a grade based on the following criteria:
+- "FORGOT": The student didn't know the word or provided a completely wrong translation.
+- "PARTIALLY_CORRECT": The student got the core idea but missed significant nuances or had a minor error that changed the meaning slightly.
+- "PRETTY_GOOD": The student's translation is correct and captures the meaning well, with only minor stylistic issues.
+- "PERFECT": The student's translation is exactly correct and idiomatic.
+
 Respond in JSON format:
 {
     "feedback": "A short sentence explaining why it is correct or incorrect, or providing a better nuance.",
-    "correct": boolean,
+    "grade": "FORGOT" | "PARTIALLY_CORRECT" | "PRETTY_GOOD" | "PERFECT",
     "correct_translation": "The primary/best English translation."
 }

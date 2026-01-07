@@ -1,6 +1,8 @@
 from telegram_bot.telegram_bot import send_message
-from swedish.database import get_all_words, add_card, get_due_cards
+from swedish.database import get_all_words, add_card, get_due_cards, get_card, update_card as db_update_card, get_next_due_card
 from swedish.flash_card import WordType
+from swedish.fsrs import update_card as fsrs_update_card, Grade, log_fsrs_update
+from util.logging_util import setup_logger
 import random
 from util.constants import REPO_ROOT
 import json
@@ -13,6 +15,8 @@ class ConversationState(Enum):
 
 # Map<chat_id, {state: ConversationState, context: dict}>
 USER_STATES = {}
+
+logger = setup_logger(__name__)
 
 def get_llm_prompt_template(filename: str):
 
@@ -84,11 +88,27 @@ def handle_practice_answer(message: str, chat_id: str, context: dict):
         clean_response = response.replace("```json", "").replace("```", "").strip()
         result = json.loads(clean_response)
         
-        if result.get('correct'):
-            send_message(chat_id, f"✅ Correct!\n{result.get('feedback')}")
-            # TODO: update score
+        grade_str = result.get('grade', 'FORGOT')
+        try:
+            grade = Grade[grade_str]
+        except KeyError:
+            grade = Grade.FORGOT
+
+        is_correct = grade != Grade.FORGOT
+        
+        if is_correct:
+            send_message(chat_id, f"✅ Correct! ({grade.name})\n{result.get('feedback')}")
         else:
             send_message(chat_id, f"❌ Incorrect.\nCorrect translation: {result.get('correct_translation')}\nFeedback: {result.get('feedback')}")
+
+        # Update FSRS state
+        word_to_learn = context.get('word_to_learn')
+        card = get_card(word_to_learn)
+        if card:
+            new_card = fsrs_update_card(card, grade)
+            db_update_card(new_card)
+            
+            log_fsrs_update(logger, card, new_card, grade)
 
     except Exception as e:
         send_message(chat_id, f"Error grading answer: {e}")
@@ -99,7 +119,10 @@ def handle_practice_answer(message: str, chat_id: str, context: dict):
 def practise_random_word(_, chat_id):
     
     due_cards = get_due_cards()
-    chosen_card = random.choice(due_cards)
+    if not due_cards:
+        chosen_card = get_next_due_card()
+    else:
+        chosen_card = random.choice(due_cards)
 
     # Modify word form using LLM
     word_to_show = chosen_card.word_to_learn

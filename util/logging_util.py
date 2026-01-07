@@ -1,7 +1,6 @@
 import logging
 import sys
 from datetime import datetime
-
 # Configure logging format
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
@@ -78,3 +77,4 @@ def log_telegram_message_sent(logger: logging.Logger, chat_id: str, text: str):
     """
     logger.info(f"📤 Telegram Message Sent - Chat: {chat_id}")
     logger.info(f"  Text: {text[:200]}{'...' if len(text) > 200 else ''}")
+

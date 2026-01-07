@@ -28,8 +28,21 @@ def init_db():
         try:
             conn.execute('ALTER TABLE flashcards ADD COLUMN word_type TEXT')
         except sqlite3.OperationalError:
-            # Column likely acts exists
             pass
+
+        # Ensure all FSRS columns exist
+        fsrs_columns = {
+            "n_times_seen": "INTEGER DEFAULT 0",
+            "difficulty": "REAL DEFAULT 0.0",
+            "stability": "REAL DEFAULT 0.0",
+            "last_review_epoch": "INTEGER DEFAULT 0",
+            "next_review_min_epoch": "INTEGER DEFAULT 0"
+        }
+        for col, col_type in fsrs_columns.items():
+            try:
+                conn.execute(f'ALTER TABLE flashcards ADD COLUMN {col} {col_type}')
+            except sqlite3.OperationalError:
+                pass
             
     conn.close()
 
@@ -113,6 +126,27 @@ def get_due_cards() -> List[FlashCard]:
             next_review_min_epoch=row['next_review_min_epoch']
         ))
     return cards
+
+def get_next_due_card() -> Optional[FlashCard]:
+    conn = get_db_connection()
+    cursor = conn.execute('SELECT * FROM flashcards ORDER BY next_review_min_epoch ASC LIMIT 1')
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        val = row['word_type']
+        w_type = WordType[val] if val else WordType.UNKNOWN
+        
+        return FlashCard(
+            word_to_learn=row['word_to_learn'],
+            word_type=w_type,
+            n_times_seen=row['n_times_seen'],
+            difficulty=row['difficulty'],
+            stability=row['stability'],
+            last_review_epoch=row['last_review_epoch'],
+            next_review_min_epoch=row['next_review_min_epoch']
+        )
+    return None
 
 def get_all_words() -> List[str]:
     conn = get_db_connection()
