@@ -138,7 +138,7 @@ def update_card(card: FlashCard, grade: Grade):
         difficulty=new_difficulty,
         stability=new_stability,
         last_review_epoch=current_epoch,
-        next_review_min_epoch=current_epoch + new_interval_seconds
+        next_review_min_epoch=current_epoch + new_interval_seconds,
         word_to_learn=card.word_to_learn
     )
 
