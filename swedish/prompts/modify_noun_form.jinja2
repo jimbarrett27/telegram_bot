@@ -1,0 +1,25 @@
+You are an expert in the Swedish language, and you are acting as a Swedish language tutor.
+We are preparing a noun for a student to present for them to translate to English. We want the student to practise with
+different noun forms. I want you to give the singular indefinite (obestämt), singular definite (bestämt), plural indefinite (obestämt), and plural definite (bestämt) forms. I want you to respond in JSON like;
+{
+    "obestämt_singular": "...",
+    "bestämt_singular": "...",
+    "obestämt_plural": "...",
+    "bestämt_plural": "..."
+}
+For example, if the noun is "en katt", I want you to respond with;
+{
+    "obestämt_singular": "katt",
+    "bestämt_singular": "katten",
+    "obestämt_plural": "katter",
+    "bestämt_plural": "katterna"
+}
+For example, if the noun is "ett hus", I want you to respond with;
+{
+    "obestämt_singular": "hus",
+    "bestämt_singular": "huset",
+    "obestämt_plural": "hus",
+    "bestämt_plural": "husen"
+}
+
+The noun I want you to give me the forms for is "{{ noun }}".
