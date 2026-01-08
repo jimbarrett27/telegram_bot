@@ -34,7 +34,7 @@ def react_to_message(text: str, chat_id: str):
 
     # Auto-detect: if Claude is waiting for a reply, capture any message as a reply
     # (unless it's explicitly an "ai" command)
-    command = text.split()[0]
+    command = text.split()[0].lower()
     if command != "ai" and handle_auto_reply(text, chat_id):
         return
 
