@@ -15,6 +15,7 @@ from content_screening.database import (
     update_scan_history,
 )
 from content_screening.models import Article, SourceType
+from content_screening.screener import screen_article
 from telegram_bot.telegram_bot import send_message_to_me
 from util.logging_util import setup_logger
 
@@ -23,18 +24,23 @@ logger = setup_logger(__name__)
 
 def _format_article_notification(article: Article) -> str:
     """Format an article for notification."""
-    keywords_str = ", ".join(article.keywords_matched) if article.keywords_matched else "None"
     categories_str = ", ".join(article.categories) if article.categories else "Unknown"
 
-    return f"""[Papers] New PV-related paper found!
+    msg = f"""[Papers] New PV-related paper found!
 
 Title: {article.title}
-Categories: {categories_str}
-Keywords matched: {keywords_str}
+Categories: {categories_str}"""
+
+    if article.llm_reasoning:
+        msg += f"\nWhy: {article.llm_reasoning}"
+
+    msg += f"""
 
 {article.url}
 
 Reply with a rating (1-10) for how interesting you find this."""
+
+    return msg
 
 
 def _notify_about_article(article: Article):
@@ -47,22 +53,33 @@ def _notify_about_article(article: Article):
 
 def process_new_articles(articles: List[Article]) -> int:
     """
-    Process a list of articles: insert new ones and notify.
+    Process a list of articles: screen with LLM, insert new ones, and notify if relevant.
 
-    Returns the number of new articles processed.
+    Returns the number of new relevant articles notified about.
     """
-    new_count = 0
+    notified_count = 0
     for article in articles:
         if article_exists(article.source_type, article.external_id):
             logger.debug(f"Article already exists: {article.external_id}")
             continue
 
+        # Screen with LLM before deciding to notify
+        is_relevant, confidence, reasoning = screen_article(article)
+        article.llm_interest_score = confidence if is_relevant else 0.0
+        article.llm_reasoning = reasoning
+
+        # Always insert the article (for record keeping)
         article_id = insert_article(article)
         article.id = article_id
-        _notify_about_article(article)
-        new_count += 1
 
-    return new_count
+        # Only notify if LLM says it's relevant
+        if is_relevant:
+            _notify_about_article(article)
+            notified_count += 1
+        else:
+            logger.info(f"Skipping notification for '{article.title[:50]}...': not PV-relevant")
+
+    return notified_count
 
 
 def run_arxiv_scan() -> tuple[int, int]:

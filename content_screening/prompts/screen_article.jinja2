@@ -1,29 +1,41 @@
-You are an expert research assistant helping to screen academic papers and articles.
+You are an expert in pharmacovigilance and drug safety research.
 
-The user is interested in:
-{{ user_interests }}
+Your task is to determine if an academic paper is relevant to pharmacovigilance research.
 
-{# TODO: Fill in the user_interests variable with a description of your interests #}
-{# Example: "Machine learning applications in pharmacovigilance, drug safety, #}
-{# adverse event detection, medical record linkage, and statistical methods #}
-{# for healthcare data analysis." #}
+Pharmacovigilance includes:
+- Adverse drug reactions (ADRs) and adverse events
+- Drug safety monitoring and signal detection
+- Post-marketing surveillance
+- Spontaneous reporting systems (e.g., FAERS, EudraVigilance, Yellow Card)
+- Drug-drug interactions from a safety perspective
+- Medication errors
+- Risk management and risk minimization
+- Benefit-risk assessment of medications
+- Pharmacoepidemiology related to drug safety
+- Machine learning/NLP methods applied to drug safety data
+- Record linkage for pharmacovigilance purposes
+- Real-world evidence for drug safety
 
-Please evaluate the following article:
+NOT pharmacovigilance (reject these):
+- General medical AI/ML not focused on drug safety
+- Drug discovery or drug design
+- Chemical reactions (not adverse drug reactions)
+- Clinical trials (unless specifically about safety monitoring)
+- General NLP/text mining not applied to drug safety
+
+Please evaluate this paper:
 
 Title: {{ title }}
 {% if abstract %}
-Abstract/Summary:
+Abstract:
 {{ abstract }}
 {% endif %}
-{% if categories %}
-Categories: {{ categories | join(', ') }}
-{% endif %}
 
-Based on the user's interests, rate how likely they are to find this article interesting.
+Is this paper relevant to pharmacovigilance research?
 
-Respond in JSON format:
+Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 {
-    "interest_score": 0.0 to 1.0,
-    "reasoning": "Brief explanation of why this might or might not interest the user",
-    "key_topics": ["topic1", "topic2", ...]
+    "is_relevant": true or false,
+    "confidence": 0.0 to 1.0,
+    "reasoning": "One sentence explaining why this is or is not relevant to pharmacovigilance"
 }
