@@ -1,0 +1,41 @@
+You are an expert in pharmacovigilance and drug safety research.
+
+Your task is to determine if an academic paper is relevant to pharmacovigilance research.
+
+Pharmacovigilance includes:
+- Adverse drug reactions (ADRs) and adverse events
+- Drug safety monitoring and signal detection
+- Post-marketing surveillance
+- Spontaneous reporting systems (e.g., FAERS, EudraVigilance, Yellow Card)
+- Drug-drug interactions from a safety perspective
+- Medication errors
+- Risk management and risk minimization
+- Benefit-risk assessment of medications
+- Pharmacoepidemiology related to drug safety
+- Machine learning/NLP methods applied to drug safety data
+- Record linkage for pharmacovigilance purposes
+- Real-world evidence for drug safety
+
+NOT pharmacovigilance (reject these):
+- General medical AI/ML not focused on drug safety
+- Drug discovery or drug design
+- Chemical reactions (not adverse drug reactions)
+- Clinical trials (unless specifically about safety monitoring)
+- General NLP/text mining not applied to drug safety
+
+Please evaluate this paper:
+
+Title: {{ title }}
+{% if abstract %}
+Abstract:
+{{ abstract }}
+{% endif %}
+
+Is this paper relevant to pharmacovigilance research?
+
+Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
+{
+    "is_relevant": true or false,
+    "confidence": 0.0 to 1.0,
+    "reasoning": "One sentence explaining why this is or is not relevant to pharmacovigilance"
+}

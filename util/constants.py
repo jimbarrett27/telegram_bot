@@ -7,30 +7,7 @@ LLM_SERVER_ADDRESS = "http://debian-server:8080"
 
 GRAMMAR_DIR = REPO_ROOT / "llm/grammars"
 
-INTERESTING_ARXIV_CATEGORIES = set(
-    [
-        "cs.AI",
-        "cs.CE",
-        "cs.CL",
-        "cs.LG",
-        "stat.AP",
-        "stat.CO",
-        "stat.ME",
-        "stat.ML",
-        "stat.TH",
-        "math.ST",
-        "q-bio.QM",
-    ]
-)
-
-PV_KEYWORDS = set(
-    [
-        "drug",
-        "pharma",
-        "adverse",
-        "reaction",
-        "medic",
-        "duplic",
-        "linkage",
-    ]
-)
+# Note: INTERESTING_ARXIV_CATEGORIES and PV_KEYWORDS have been moved to
+# content_screening/constants.py. Import from there for new code.
+# These re-exports are kept for backwards compatibility with util/arxiv.py.
+from content_screening.constants import INTERESTING_ARXIV_CATEGORIES, PV_KEYWORDS

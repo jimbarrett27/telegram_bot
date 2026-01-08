@@ -10,6 +10,12 @@ from claude.claude_bot import (
     handle_auto_reply,
     process_outgoing_messages as process_claude_outgoing_messages,
 )
+from content_screening.database import init_db as init_screening_db
+from content_screening.screening_bot import (
+    handle_message as handle_message_papers,
+    handle_rating_reply,
+)
+from content_screening.scanner import run_daily_scan_if_due
 from util.logging_util import setup_logger, log_telegram_message_received
 
 logger = setup_logger(__name__)
@@ -18,9 +24,14 @@ COMMAND_TO_MESSAGE_HANDLER = {
     "🇸🇪": handle_message_swedish,
     "sv": handle_message_swedish,
     "ai": handle_message_claude,
+    "papers": handle_message_papers,
 }
 
 def react_to_message(text: str, chat_id: str):
+    # Check if this is a rating reply (number 1-10) for pending article notifications
+    if handle_rating_reply(text, chat_id):
+        return
+
     # Auto-detect: if Claude is waiting for a reply, capture any message as a reply
     # (unless it's explicitly an "ai" command)
     command = text.split()[0]
@@ -37,6 +48,7 @@ def main():
     print("Starting telegram bot...")
     init_swedish_db()
     init_claude_db()
+    init_screening_db()
     populate_db()
     offset = 0
   
@@ -65,6 +77,7 @@ def main():
             
             react_to_minecraft_logs()
             process_claude_outgoing_messages()
+            run_daily_scan_if_due()
 
             # Sleep briefly to avoid hammering the API
             time.sleep(1)
