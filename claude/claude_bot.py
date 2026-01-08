@@ -8,6 +8,7 @@ from claude.database import (
     create_incoming_message,
     get_latest_sent_conversation,
     has_pending_conversation,
+    clear_all_pending_conversations,
 )
 from util.logging_util import setup_logger
 
@@ -19,18 +20,21 @@ def handle_message(message: str, chat_id: str):
 
     Subcommands:
         status - Show if there are pending conversations
+        reset - Clear all pending conversations (failsafe)
         <anything else> - Treat as reply to most recent outgoing message
     """
     init_db()
 
     if not message.strip():
-        send_message(chat_id, "Usage: ai <reply> or ai status")
+        send_message(chat_id, "Usage: ai <reply> or ai status or ai reset")
         return
 
     command = message.split()[0].lower()
 
     if command == "status":
         _handle_status(chat_id)
+    elif command == "reset":
+        _handle_reset(chat_id)
     else:
         # Treat entire message as a reply
         _handle_reply(message, chat_id)
@@ -103,3 +107,13 @@ def _handle_reply(message: str, chat_id: str):
     create_incoming_message(message, conversation_id)
     logger.info(f"Received reply for conversation {conversation_id}")
     send_message(chat_id, f"Reply recorded for conversation {conversation_id[:8]}...")
+
+
+def _handle_reset(chat_id: str):
+    """Clear all pending conversations as a failsafe."""
+    count = clear_all_pending_conversations()
+    if count > 0:
+        logger.info(f"Reset: cleared {count} pending conversation(s)")
+        send_message(chat_id, f"Reset complete. Cleared {count} pending conversation(s).")
+    else:
+        send_message(chat_id, "No pending conversations to clear.")

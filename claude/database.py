@@ -185,8 +185,25 @@ def get_latest_sent_conversation() -> Optional[str]:
 
 
 def has_pending_conversation() -> bool:
-    """Check if there's any outgoing message awaiting a reply."""
-    return get_latest_sent_conversation() is not None
+    """Check if there's any outgoing message awaiting a reply.
+
+    Returns False if the conversation already has a reply (even if unread).
+    """
+    conversation_id = get_latest_sent_conversation()
+    if conversation_id is None:
+        return False
+
+    # Check if there's already a reply for this conversation
+    conn = get_db_connection()
+    cursor = conn.execute('''
+        SELECT COUNT(*) FROM messages
+        WHERE conversation_id = ? AND direction = ?
+    ''', (conversation_id, MessageDirection.INCOMING.value))
+    count = cursor.fetchone()[0]
+    conn.close()
+
+    # Only pending if there's no reply yet
+    return count == 0
 
 
 def get_conversation_messages(conversation_id: str) -> List[Message]:
@@ -200,3 +217,27 @@ def get_conversation_messages(conversation_id: str) -> List[Message]:
     rows = cursor.fetchall()
     conn.close()
     return [_row_to_message(row) for row in rows]
+
+
+def clear_all_pending_conversations() -> int:
+    """Clear all pending conversations by marking sent messages as read.
+
+    This is a failsafe to reset the bot to a clean state.
+
+    Returns the number of conversations cleared.
+    """
+    conn = get_db_connection()
+    with conn:
+        cursor = conn.execute('''
+            UPDATE messages
+            SET status = ?, processed_at = ?
+            WHERE direction = ? AND status = ?
+        ''', (
+            MessageStatus.READ.value,
+            int(time.time()),
+            MessageDirection.OUTGOING.value,
+            MessageStatus.SENT.value
+        ))
+        count = cursor.rowcount
+    conn.close()
+    return count
