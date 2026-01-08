@@ -22,8 +22,16 @@ def get_llm_prompt_template(filename: str):
 
     return (REPO_ROOT / "swedish/prompts") / filename
 
+
+def _show_help(chat_id: str):
+    """Show help message for Swedish bot commands."""
+    send_message(chat_id, """Swedish learning commands:
+sv add <type> <word> - Add a word (type: noun, verb, adj, auto)
+sv practise - Practice a random flashcard""")
+
+
 def handle_message(message: str, chat_id: str):
-    
+
     # Check for active conversation state
     if chat_id in USER_STATES and USER_STATES[chat_id]['state'] != ConversationState.IDLE:
         current_state_info = USER_STATES[chat_id]
@@ -31,10 +39,17 @@ def handle_message(message: str, chat_id: str):
             handle_practice_answer(message, chat_id, current_state_info['context'])
         return
 
-    command = message.split()[0]
+    # Show help if no command provided
+    if not message.strip():
+        _show_help(chat_id)
+        return
 
-    if command not in COMMAND_TO_MESSAGE_HANDLER:
-        send_message(chat_id, f"Unrecognised command: {command}")
+    command = message.split()[0].lower()
+
+    if command == "help":
+        _show_help(chat_id)
+    elif command not in COMMAND_TO_MESSAGE_HANDLER:
+        _show_help(chat_id)
     else:
         command_to_send = (' '.join(message.split()[1:])).strip()
         COMMAND_TO_MESSAGE_HANDLER[command](command_to_send, chat_id)
