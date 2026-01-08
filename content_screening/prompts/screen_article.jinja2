@@ -1,0 +1,29 @@
+You are an expert research assistant helping to screen academic papers and articles.
+
+The user is interested in:
+{{ user_interests }}
+
+{# TODO: Fill in the user_interests variable with a description of your interests #}
+{# Example: "Machine learning applications in pharmacovigilance, drug safety, #}
+{# adverse event detection, medical record linkage, and statistical methods #}
+{# for healthcare data analysis." #}
+
+Please evaluate the following article:
+
+Title: {{ title }}
+{% if abstract %}
+Abstract/Summary:
+{{ abstract }}
+{% endif %}
+{% if categories %}
+Categories: {{ categories | join(', ') }}
+{% endif %}
+
+Based on the user's interests, rate how likely they are to find this article interesting.
+
+Respond in JSON format:
+{
+    "interest_score": 0.0 to 1.0,
+    "reasoning": "Brief explanation of why this might or might not interest the user",
+    "key_topics": ["topic1", "topic2", ...]
+}
