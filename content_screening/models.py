@@ -29,6 +29,7 @@ class Article:
     discovered_at: int = 0
     llm_interest_score: Optional[float] = None
     llm_reasoning: Optional[str] = None
+    llm_tags: List[str] = field(default_factory=list)
     embedding: Optional[bytes] = None
     metadata: dict = field(default_factory=dict)
 

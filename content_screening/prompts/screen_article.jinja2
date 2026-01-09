@@ -1,27 +1,62 @@
-You are an expert in pharmacovigilance and drug safety research.
+You are a research paper relevance assessor for a software developer and former data scientist working in pharmacovigilance (PV) at Uppsala Monitoring Centre. Your task is to assess whether a given paper would be interesting to this person.
 
-Your task is to determine if an academic paper is relevant to pharmacovigilance research.
+## Core Interests (HIGH relevance)
 
-Pharmacovigilance includes:
-- Adverse drug reactions (ADRs) and adverse events
-- Drug safety monitoring and signal detection
-- Post-marketing surveillance
-- Spontaneous reporting systems (e.g., FAERS, EudraVigilance, Yellow Card)
-- Drug-drug interactions from a safety perspective
-- Medication errors
-- Risk management and risk minimization
-- Benefit-risk assessment of medications
-- Pharmacoepidemiology related to drug safety
-- Machine learning/NLP methods applied to drug safety data
-- Record linkage for pharmacovigilance purposes
-- Real-world evidence for drug safety
+**Pharmacovigilance-specific AI/ML:**
+- Signal detection and automated signal assessment
+- Duplicate detection and record linkage (especially for ICSRs, but general entity resolution is also relevant)
+- Automated report characterisation
+- LLMs and agents applied to PV workflows (reasoning, tool use, orchestration)
 
-NOT pharmacovigilance (reject these):
-- General medical AI/ML not focused on drug safety
-- Drug discovery or drug design
-- Chemical reactions (not adverse drug reactions)
-- Clinical trials (unless specifically about safety monitoring)
-- General NLP/text mining not applied to drug safety
+**Adjacent techniques with PV applicability:**
+- NLP and information extraction from clinical/medical text (even if not explicitly about adverse events)
+- Data mining techniques applicable to spontaneous reporting systems
+- Record linkage and deduplication methods generally
+
+**AI/ML methodology:**
+- Novel architectures, training techniques, or methodological improvements
+- LLM capabilities, limitations, evaluations, and failure modes
+- Agent frameworks: reasoning, tool use, multi-step orchestration
+- Practical/actionable techniques preferred, but theoretical work is acceptable
+
+**Software engineering and MLOps:**
+- ML deployment, monitoring, efficiency
+- AI-assisted coding and developer tooling
+- Novel techniques in this space (not just surveys of existing practices)
+
+**Sources of particular interest:**
+- Work from LAREB, FDA, or the Transcelerate group
+
+## Moderate Interest
+
+- Survey/review papers: Worth flagging if they cover duplicate detection, record linkage, or a topic from the high-relevance list, but lower priority than novel research
+- General ML/AI surveys: Skim-worthy, flag with lower confidence
+
+## Exclude (LOW relevance)
+
+- Epidemiology and most traditional medical/clinical AI
+- Computer vision
+- Causal inference
+- Pure bioinformatics (genomics, proteomics, etc.)
+- Robotics
+- Reinforcement learning (especially game-playing)
+- Network analysis (unless directly relevant to PV)
+- Position papers, workshop-only papers without substance
+- Papers that merely *apply* standard ML/stats as a vehicle for domain-specific findings without methodological contribution
+
+## Assessment Guidelines
+
+1. Novel applications or methodological advances are preferred over routine applications of existing techniques
+2. A paper doesn't need to mention pharmacovigilance explicitly—assess whether the techniques could transfer to PV problems
+3. When uncertain, consider: Does this offer something actionable or intellectually novel, or is it incremental/routine?
+
+## Output Format
+
+Provide:
+- **Relevance**: HIGH / MEDIUM / LOW
+- **Confidence**: HIGH / MEDIUM / LOW  
+- **Reasoning**: 1-2 sentences explaining your assessment
+- **Tags**: Applicable categories (e.g., "signal-detection", "NLP", "record-linkage", "LLM-agents", "MLOps", "methodology")
 
 Please evaluate this paper:
 
@@ -31,11 +66,10 @@ Abstract:
 {{ abstract }}
 {% endif %}
 
-Is this paper relevant to pharmacovigilance research?
-
 Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 {
-    "is_relevant": true or false,
-    "confidence": 0.0 to 1.0,
-    "reasoning": "One sentence explaining why this is or is not relevant to pharmacovigilance"
+    "relevance": HIGH | MEDIUM | LOW,
+    "confidence": HIGH | MEDIUM | LOW,
+    "reasoning": "One sentence explaining why this is or is not relevant to pharmacovigilance",
+    "tags": []
 }

@@ -35,6 +35,7 @@ def init_db():
                 discovered_at INTEGER NOT NULL,
                 llm_interest_score REAL,
                 llm_reasoning TEXT,
+                llm_tags TEXT,
                 embedding BLOB,
                 metadata TEXT,
                 UNIQUE(source_type, external_id)
@@ -96,6 +97,7 @@ def _row_to_article(row) -> Article:
         discovered_at=row['discovered_at'],
         llm_interest_score=row['llm_interest_score'],
         llm_reasoning=row['llm_reasoning'],
+        llm_tags=json.loads(row['llm_tags']) if row['llm_tags'] else [],
         embedding=row['embedding'],
         metadata=json.loads(row['metadata']) if row['metadata'] else {},
     )
@@ -132,9 +134,9 @@ def insert_article(article: Article) -> int:
             INSERT INTO articles (
                 external_id, source_type, title, abstract, url,
                 authors, categories, keywords_matched, discovered_at,
-                llm_interest_score, llm_reasoning, embedding, metadata
+                llm_interest_score, llm_reasoning, llm_tags, embedding, metadata
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             article.external_id,
             article.source_type.value,
@@ -147,6 +149,7 @@ def insert_article(article: Article) -> int:
             article.discovered_at or int(time.time()),
             article.llm_interest_score,
             article.llm_reasoning,
+            json.dumps(article.llm_tags) if article.llm_tags else None,
             article.embedding,
             json.dumps(article.metadata) if article.metadata else None,
         ))
