@@ -15,6 +15,7 @@ dependencies = [
     "ipython>=9.9.0",
     "feedparser>=6.0.12",
     "html2text>=2025.4.15",
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]

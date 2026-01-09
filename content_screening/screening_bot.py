@@ -55,21 +55,41 @@ async def handle_status_async(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
-async def handle_scan_async(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manually trigger a scan."""
-    from content_screening.scanner import run_arxiv_scan
+async def handle_scan_async(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, scan_type: str = "arxiv"
+) -> None:
+    """Manually trigger a scan.
+
+    Args:
+        update: Telegram update object
+        context: Telegram context
+        scan_type: "arxiv", "rss", or "all"
+    """
+    from content_screening.scanner import run_arxiv_scan, run_rss_scan
 
     init_db()
 
-    await update.message.reply_text(
-        "Starting manual ArXiv scan...",
-        reply_markup=MAIN_MENU_KEYBOARD,
-    )
+    results = []
 
     try:
-        total, new = run_arxiv_scan()
+        if scan_type in ("arxiv", "all"):
+            await update.message.reply_text(
+                "Starting ArXiv scan...",
+                reply_markup=MAIN_MENU_KEYBOARD,
+            )
+            total, new = run_arxiv_scan()
+            results.append(f"ArXiv: {total} found, {new} new")
+
+        if scan_type in ("rss", "all"):
+            await update.message.reply_text(
+                "Starting RSS scan...",
+                reply_markup=MAIN_MENU_KEYBOARD,
+            )
+            total, new = run_rss_scan()
+            results.append(f"RSS: {total} found, {new} new")
+
         await update.message.reply_text(
-            f"Scan complete! Found {total} papers, {new} new interesting ones.",
+            "Scan complete!\n" + "\n".join(results),
             reply_markup=MAIN_MENU_KEYBOARD,
         )
     except Exception as e:
@@ -138,12 +158,17 @@ async def handle_text_command_async(
         await _show_help(update)
         return
 
-    cmd = command.split()[0].lower()
+    parts = command.lower().split()
+    cmd = parts[0]
 
     if cmd == "status":
         await handle_status_async(update, context)
     elif cmd == "scan":
-        await handle_scan_async(update, context)
+        # Parse scan type from second argument
+        scan_type = parts[1] if len(parts) > 1 else "arxiv"
+        if scan_type not in ("arxiv", "rss", "all"):
+            scan_type = "arxiv"
+        await handle_scan_async(update, context, scan_type)
     else:
         await _show_help(update)
 
@@ -153,7 +178,9 @@ async def _show_help(update: Update) -> None:
     await update.message.reply_text(
         """Papers commands:
 papers status - Show pending articles awaiting rating
-papers scan - Manually trigger a scan
+papers scan - Manually trigger an ArXiv scan
+papers scan rss - Manually trigger an RSS scan
+papers scan all - Trigger both ArXiv and RSS scans
 
 Or use the menu buttons!""",
         reply_markup=MAIN_MENU_KEYBOARD,
