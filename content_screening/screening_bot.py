@@ -30,12 +30,17 @@ def handle_message(message: str, chat_id: str):
         _show_help(chat_id)
         return
 
-    command = message.split()[0].lower()
+    parts = message.lower().split()
+    command = parts[0]
 
     if command == "status":
         _handle_status(chat_id)
     elif command == "scan":
-        _handle_manual_scan(chat_id)
+        # Parse scan type from second argument
+        scan_type = parts[1] if len(parts) > 1 else "arxiv"
+        if scan_type not in ("arxiv", "rss", "all"):
+            scan_type = "arxiv"
+        _handle_manual_scan(chat_id, scan_type)
     else:
         _show_help(chat_id)
 
@@ -92,7 +97,9 @@ def _show_help(chat_id: str):
     """Show help message."""
     send_message(chat_id, """Papers commands:
 papers status - Show pending articles awaiting rating
-papers scan - Manually trigger a scan""")
+papers scan - Manually trigger an ArXiv scan
+papers scan rss - Manually trigger an RSS scan
+papers scan all - Trigger both ArXiv and RSS scans""")
 
 
 def _handle_status(chat_id: str):
@@ -111,15 +118,29 @@ def _handle_status(chat_id: str):
         send_message(chat_id, f"Next: {article.title[:80]}...\n\nReply with a rating (1-10)")
 
 
-def _handle_manual_scan(chat_id: str):
-    """Manually trigger a scan."""
-    from content_screening.scanner import run_arxiv_scan
+def _handle_manual_scan(chat_id: str, scan_type: str = "arxiv"):
+    """Manually trigger a scan.
 
-    send_message(chat_id, "Starting manual ArXiv scan...")
+    Args:
+        chat_id: The chat ID to send messages to
+        scan_type: "arxiv", "rss", or "all"
+    """
+    from content_screening.scanner import run_arxiv_scan, run_rss_scan
+
+    results = []
 
     try:
-        total, new = run_arxiv_scan()
-        send_message(chat_id, f"Scan complete! Found {total} papers, {new} new interesting ones.")
+        if scan_type in ("arxiv", "all"):
+            send_message(chat_id, "Starting ArXiv scan...")
+            total, new = run_arxiv_scan()
+            results.append(f"ArXiv: {total} found, {new} new")
+
+        if scan_type in ("rss", "all"):
+            send_message(chat_id, "Starting RSS scan...")
+            total, new = run_rss_scan()
+            results.append(f"RSS: {total} found, {new} new")
+
+        send_message(chat_id, "Scan complete!\n" + "\n".join(results))
     except Exception as e:
         logger.error(f"Manual scan failed: {e}")
         send_message(chat_id, f"Scan failed: {e}")

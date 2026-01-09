@@ -15,6 +15,7 @@ from content_screening.database import (
     update_scan_history,
 )
 from content_screening.models import Article, SourceType
+from content_screening.rss_feed import fetch_rss_articles
 from content_screening.screener import screen_article
 from telegram_bot.telegram_bot import send_message_to_me
 from util.logging_util import setup_logger
@@ -26,10 +27,16 @@ def _format_article_notification(article: Article) -> str:
     """Format an article for notification."""
     categories_str = ", ".join(article.categories) if article.categories else "Unknown"
 
+    # Use appropriate label based on source type
+    if article.source_type == SourceType.RSS:
+        source_label = "Source"
+    else:
+        source_label = "Categories"
+
     msg = f"""[Papers] New PV-related paper found!
 
 Title: {article.title}
-Categories: {categories_str}"""
+{source_label}: {categories_str}"""
 
     if article.llm_reasoning:
         msg += f"\nWhy: {article.llm_reasoning}"
@@ -99,6 +106,23 @@ def run_arxiv_scan() -> tuple[int, int]:
     return total_found, new_count
 
 
+def run_rss_scan() -> tuple[int, int]:
+    """
+    Run a scan of RSS feeds.
+
+    Returns (total_found, new_interesting) counts.
+    """
+    logger.info("Starting RSS scan")
+    articles = fetch_rss_articles()
+    total_found = len(articles)
+
+    new_count = process_new_articles(articles)
+    update_scan_history(SourceType.RSS, total_found, new_count)
+
+    logger.info(f"RSS scan complete: {total_found} found, {new_count} new")
+    return total_found, new_count
+
+
 def is_scan_due(source_type: SourceType) -> bool:
     """Check if a scan is due for the given source type."""
     last_scan = get_last_scan_time(source_type)
@@ -115,3 +139,5 @@ def run_daily_scan_if_due():
     """
     if is_scan_due(SourceType.ARXIV):
         run_arxiv_scan()
+    if is_scan_due(SourceType.RSS):
+        run_rss_scan()
