@@ -164,10 +164,10 @@ async def handle_text_command_async(
     if cmd == "status":
         await handle_status_async(update, context)
     elif cmd == "scan":
-        # Parse scan type from second argument
-        scan_type = parts[1] if len(parts) > 1 else "arxiv"
+        # Parse scan type from second argument (default to all)
+        scan_type = parts[1] if len(parts) > 1 else "all"
         if scan_type not in ("arxiv", "rss", "all"):
-            scan_type = "arxiv"
+            scan_type = "all"
         await handle_scan_async(update, context, scan_type)
     else:
         await _show_help(update)
@@ -178,9 +178,9 @@ async def _show_help(update: Update) -> None:
     await update.message.reply_text(
         """Papers commands:
 papers status - Show pending articles awaiting rating
-papers scan - Manually trigger an ArXiv scan
-papers scan rss - Manually trigger an RSS scan
-papers scan all - Trigger both ArXiv and RSS scans
+papers scan - Scan all feeds (ArXiv + RSS)
+papers scan arxiv - Scan only ArXiv
+papers scan rss - Scan only RSS feeds
 
 Or use the menu buttons!""",
         reply_markup=MAIN_MENU_KEYBOARD,

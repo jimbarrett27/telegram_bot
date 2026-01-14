@@ -49,7 +49,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 📚 Papers:
 • 📚 Papers Status - Show pending articles
-• 🔍 Scan Papers - Manually trigger ArXiv scan
+• 🔍 Scan Papers - Scan ArXiv and RSS feeds
 • papers status / papers scan - Text commands
 
 Use /start to show the menu keyboard."""
@@ -65,11 +65,11 @@ async def handle_papers_status(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_papers_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle papers scan button."""
+    """Handle papers scan button - scans all feeds (ArXiv and RSS)."""
     log_telegram_message_received(logger, str(update.effective_chat.id),
                                   update.effective_user.username or "unknown",
                                   update.message.text)
-    await screening_bot.handle_scan_async(update, context)
+    await screening_bot.handle_scan_async(update, context, scan_type="all")
 
 
 async def handle_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
