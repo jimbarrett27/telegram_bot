@@ -2,7 +2,9 @@
 Telegram message handler for content screening ratings.
 """
 
-from telegram_bot.telegram_bot import send_message, send_message_to_me
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ContextTypes
+
 from content_screening.database import (
     init_db,
     get_oldest_pending_notification,
@@ -15,41 +17,73 @@ from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
 
+# Main menu keyboard
+MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["🇸🇪 Practise", "📝 Add Word"],
+        ["📚 Papers Status", "🔍 Scan Papers"],
+        ["❓ Help"],
+    ],
+    resize_keyboard=True,
+)
 
-def handle_message(message: str, chat_id: str):
-    """Handle a 'papers' prefixed message.
 
-    Subcommands:
-        status - Show pending articles awaiting rating
-        scan - Manually trigger a scan
-        <anything else> - Show help
-    """
+async def handle_status_async(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show status of pending notifications."""
     init_db()
 
-    if not message.strip():
-        _show_help(chat_id)
+    pending = get_pending_notifications()
+    if not pending:
+        await update.message.reply_text(
+            "No articles awaiting rating.",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
         return
 
-    command = message.split()[0].lower()
+    count = len(pending)
+    await update.message.reply_text(
+        f"You have {count} article(s) awaiting rating.",
+        reply_markup=MAIN_MENU_KEYBOARD,
+    )
 
-    if command == "status":
-        _handle_status(chat_id)
-    elif command == "scan":
-        _handle_manual_scan(chat_id)
-    else:
-        _show_help(chat_id)
+    oldest = pending[0]
+    article = get_article_by_id(oldest.article_id)
+    if article:
+        await update.message.reply_text(
+            f"Next: {article.title[:80]}...\n\nReply with a rating (1-10)",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
 
 
-def handle_rating_reply(message: str, chat_id: str) -> bool:
+async def handle_scan_async(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manually trigger a scan."""
+    from content_screening.scanner import run_arxiv_scan
+
+    init_db()
+
+    await update.message.reply_text(
+        "Starting manual ArXiv scan...",
+        reply_markup=MAIN_MENU_KEYBOARD,
+    )
+
+    try:
+        total, new = run_arxiv_scan()
+        await update.message.reply_text(
+            f"Scan complete! Found {total} papers, {new} new interesting ones.",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
+    except Exception as e:
+        logger.error(f"Manual scan failed: {e}")
+        await update.message.reply_text(
+            f"Scan failed: {e}",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
+
+
+async def handle_rating_reply_async(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, message: str
+) -> bool:
     """Handle a potential rating reply when there's a pending notification.
-
-    This should be called BEFORE command routing in main.py.
-    If there's a pending notification and the message is a number 1-10,
-    this will record the rating.
-
-    Args:
-        message: The incoming message text
-        chat_id: The chat ID
 
     Returns:
         True if the message was handled as a rating, False otherwise
@@ -79,47 +113,48 @@ def handle_rating_reply(message: str, chat_id: str) -> bool:
     mark_notification_rated(pending.id)
     logger.info(f"Recorded rating {rating} for article {article.external_id}")
 
-    send_message(chat_id, f"Thanks! Recorded rating {rating}/10 for: {article.title[:50]}...")
+    await update.message.reply_text(
+        f"Thanks! Recorded rating {rating}/10 for: {article.title[:50]}...",
+        reply_markup=MAIN_MENU_KEYBOARD,
+    )
 
     remaining = len(get_pending_notifications())
     if remaining > 0:
-        send_message(chat_id, f"You have {remaining} more article(s) awaiting rating.")
+        await update.message.reply_text(
+            f"You have {remaining} more article(s) awaiting rating.",
+            reply_markup=MAIN_MENU_KEYBOARD,
+        )
 
     return True
 
 
-def _show_help(chat_id: str):
-    """Show help message."""
-    send_message(chat_id, """Papers commands:
-papers status - Show pending articles awaiting rating
-papers scan - Manually trigger a scan""")
+async def handle_text_command_async(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, command: str
+) -> None:
+    """Handle text-based commands (papers status, papers scan, etc.)."""
+    init_db()
 
-
-def _handle_status(chat_id: str):
-    """Show status of pending notifications."""
-    pending = get_pending_notifications()
-    if not pending:
-        send_message(chat_id, "No articles awaiting rating.")
+    if not command.strip():
+        await _show_help(update)
         return
 
-    count = len(pending)
-    send_message(chat_id, f"You have {count} article(s) awaiting rating.")
+    cmd = command.split()[0].lower()
 
-    oldest = pending[0]
-    article = get_article_by_id(oldest.article_id)
-    if article:
-        send_message(chat_id, f"Next: {article.title[:80]}...\n\nReply with a rating (1-10)")
+    if cmd == "status":
+        await handle_status_async(update, context)
+    elif cmd == "scan":
+        await handle_scan_async(update, context)
+    else:
+        await _show_help(update)
 
 
-def _handle_manual_scan(chat_id: str):
-    """Manually trigger a scan."""
-    from content_screening.scanner import run_arxiv_scan
+async def _show_help(update: Update) -> None:
+    """Show help message."""
+    await update.message.reply_text(
+        """Papers commands:
+papers status - Show pending articles awaiting rating
+papers scan - Manually trigger a scan
 
-    send_message(chat_id, "Starting manual ArXiv scan...")
-
-    try:
-        total, new = run_arxiv_scan()
-        send_message(chat_id, f"Scan complete! Found {total} papers, {new} new interesting ones.")
-    except Exception as e:
-        logger.error(f"Manual scan failed: {e}")
-        send_message(chat_id, f"Scan failed: {e}")
+Or use the menu buttons!""",
+        reply_markup=MAIN_MENU_KEYBOARD,
+    )
