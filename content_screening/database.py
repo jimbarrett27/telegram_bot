@@ -50,6 +50,12 @@ def init_db():
             ON articles(discovered_at)
         ''')
 
+        # Migration: Add llm_tags column if it doesn't exist
+        cursor = conn.execute('PRAGMA table_info(articles)')
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'llm_tags' not in columns:
+            conn.execute('ALTER TABLE articles ADD COLUMN llm_tags TEXT')
+
         conn.execute('''
             CREATE TABLE IF NOT EXISTS article_ratings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
