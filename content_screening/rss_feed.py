@@ -5,6 +5,7 @@ Generic RSS feed fetching and processing.
 import hashlib
 import time
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
@@ -112,6 +113,22 @@ def _find_matching_keywords(text: str) -> List[str]:
     return [kw for kw in PV_KEYWORDS if kw in text_lower]
 
 
+def _is_published_today(entry: dict) -> bool:
+    """Check if an RSS entry was published today.
+
+    Uses the published_parsed field from feedparser which provides a struct_time.
+    Returns True if no date is available (to avoid filtering out entries without dates).
+    """
+    published_parsed = entry.get("published_parsed")
+    if published_parsed is None:
+        # If no date available, include the entry to be safe
+        return True
+
+    today = date.today()
+    entry_date = date(published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday)
+    return entry_date == today
+
+
 def fetch_rss_articles(
     feed_configs: List[FeedConfig] = None,
     filter_by_keywords: bool = True,
@@ -159,6 +176,10 @@ def fetch_rss_articles(
             if external_id in seen_ids:
                 continue
             seen_ids.add(external_id)
+
+            # Only consider articles published today
+            if not _is_published_today(entry):
+                continue
 
             title = entry.get("title", "").strip()
             if not title:
