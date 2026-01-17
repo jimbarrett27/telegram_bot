@@ -114,15 +114,15 @@ def _find_matching_keywords(text: str) -> List[str]:
 
 
 def _is_published_today(entry: dict) -> bool:
-    """Check if an RSS entry was published today.
+    """Check if an RSS entry was published exactly today.
 
     Uses the published_parsed field from feedparser which provides a struct_time.
-    Returns True if no date is available (to avoid filtering out entries without dates).
+    Returns False if no date is available or if the date is not exactly today.
     """
     published_parsed = entry.get("published_parsed")
     if published_parsed is None:
-        # If no date available, include the entry to be safe
-        return True
+        # No date available, exclude the entry
+        return False
 
     today = date.today()
     entry_date = date(published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday)

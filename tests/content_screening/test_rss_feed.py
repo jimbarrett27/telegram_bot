@@ -1,5 +1,7 @@
 """Tests for RSS feed fetching functionality."""
 
+import time
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -221,6 +223,12 @@ class TestFindMatchingKeywords:
 class TestFetchRssArticles:
     """Tests for fetch_rss_articles function."""
 
+    @staticmethod
+    def _today_struct_time():
+        """Get today's date as a struct_time for mocking published_parsed."""
+        today = date.today()
+        return time.struct_time((today.year, today.month, today.day, 0, 0, 0, 0, 0, 0))
+
     @patch("content_screening.rss_feed.feedparser.parse")
     def test_fetches_articles_from_feed(self, mock_parse):
         """Test basic article fetching from RSS feed."""
@@ -233,6 +241,7 @@ class TestFetchRssArticles:
                     "summary": "A study on drug safety.",
                     "link": "https://example.com/article1",
                     "authors": [{"name": "John Smith"}],
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -257,12 +266,14 @@ class TestFetchRssArticles:
                     "title": "Drug safety study",
                     "summary": "About adverse reactions.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "article-2",
                     "title": "Machine learning algorithms",
                     "summary": "Neural network techniques.",
                     "link": "https://example.com/article2",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -284,12 +295,14 @@ class TestFetchRssArticles:
                     "title": "Drug safety study",
                     "summary": "About adverse reactions.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "article-2",
                     "title": "Machine learning algorithms",
                     "summary": "Neural network techniques.",
                     "link": "https://example.com/article2",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -330,12 +343,14 @@ class TestFetchRssArticles:
                     "title": "Drug study part 1",
                     "summary": "About drugs.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "same-id",
                     "title": "Drug study part 1 (duplicate)",
                     "summary": "About drugs.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -356,12 +371,14 @@ class TestFetchRssArticles:
                     "title": "",
                     "summary": "About drugs.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "article-2",
                     "title": "Valid drug article",
                     "summary": "About drugs.",
                     "link": "https://example.com/article2",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -383,12 +400,14 @@ class TestFetchRssArticles:
                     "title": "Drug article without link",
                     "summary": "About drugs.",
                     "link": "",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "article-2",
                     "title": "Valid drug article",
                     "summary": "About drugs.",
                     "link": "https://example.com/article2",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -411,6 +430,7 @@ class TestFetchRssArticles:
                     "summary": "About adverse reactions.",
                     "link": "https://example.com/article1",
                     "published": "2024-01-15T10:00:00Z",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -433,6 +453,8 @@ class TestFetchRssArticles:
     @patch("content_screening.rss_feed.feedparser.parse")
     def test_fetches_from_multiple_feeds(self, mock_parse):
         """Test fetching from multiple feed configurations."""
+        today_struct = self._today_struct_time()
+
         def side_effect(url):
             if "feed1" in url:
                 return {
@@ -443,6 +465,7 @@ class TestFetchRssArticles:
                             "title": "Drug study from feed 1",
                             "summary": "About drugs.",
                             "link": "https://example.com/feed1/article",
+                            "published_parsed": today_struct,
                         },
                     ],
                 }
@@ -455,6 +478,7 @@ class TestFetchRssArticles:
                             "title": "Medical research from feed 2",
                             "summary": "About medicine.",
                             "link": "https://example.com/feed2/article",
+                            "published_parsed": today_struct,
                         },
                     ],
                 }
@@ -492,12 +516,14 @@ class TestFetchRssArticles:
                     "title": "Machine learning study",
                     "summary": "About neural networks.",
                     "link": "https://example.com/article1",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "article-2",
                     "title": "Drug safety research",
                     "summary": "About safety.",
                     "link": "https://example.com/article2",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }

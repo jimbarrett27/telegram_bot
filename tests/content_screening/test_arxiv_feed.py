@@ -1,5 +1,7 @@
 """Tests for ArXiv feed fetching functionality."""
 
+import time
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +12,7 @@ from content_screening.arxiv_feed import (
     _extract_authors,
     _extract_paper_id,
     _find_matching_keywords,
+    _is_published_today,
     fetch_arxiv_papers,
     get_arxiv_rss_url,
     make_arxiv_url,
@@ -132,6 +135,12 @@ class TestFindMatchingKeywords:
 class TestFetchArxivPapers:
     """Tests for fetch_arxiv_papers function."""
 
+    @staticmethod
+    def _today_struct_time():
+        """Get today's date as a struct_time for mocking published_parsed."""
+        today = date.today()
+        return time.struct_time((today.year, today.month, today.day, 0, 0, 0, 0, 0, 0))
+
     @patch("content_screening.arxiv_feed.feedparser.parse")
     def test_fetches_papers_from_category(self, mock_parse):
         """Test basic paper fetching from a category."""
@@ -142,6 +151,7 @@ class TestFetchArxivPapers:
                     "title": "Adverse Drug Reaction Detection Using NLP",
                     "summary": "<p>A study on drug safety monitoring.</p>",
                     "authors": [{"name": "John Smith"}],
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -167,11 +177,13 @@ class TestFetchArxivPapers:
                     "id": "oai:arXiv.org:2401.11111",
                     "title": "Drug Safety Analysis",
                     "summary": "About adverse reactions.",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "oai:arXiv.org:2401.22222",
                     "title": "Image Classification with CNNs",
                     "summary": "Computer vision techniques.",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -193,11 +205,13 @@ class TestFetchArxivPapers:
                     "id": "oai:arXiv.org:2401.11111",
                     "title": "Drug Safety Analysis",
                     "summary": "About adverse reactions.",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "oai:arXiv.org:2401.22222",
                     "title": "Image Classification with CNNs",
                     "summary": "Computer vision techniques.",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -218,6 +232,7 @@ class TestFetchArxivPapers:
                     "id": "oai:arXiv.org:2401.12345",
                     "title": "Drug Safety with Machine Learning",
                     "summary": "About drugs.",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -249,11 +264,13 @@ class TestFetchArxivPapers:
                     "id": "",
                     "title": "Drug study without ID",
                     "summary": "About drugs.",
+                    "published_parsed": self._today_struct_time(),
                 },
                 {
                     "id": "oai:arXiv.org:2401.12345",
                     "title": "Valid drug study",
                     "summary": "About drugs.",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -275,6 +292,7 @@ class TestFetchArxivPapers:
                     "id": "oai:arXiv.org:2401.12345",
                     "title": "Drug Safety Study",
                     "summary": "<p>This is about <strong>drug</strong> safety.</p>",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -298,6 +316,7 @@ class TestFetchArxivPapers:
                     "id": "oai:arXiv.org:2401.12345",
                     "title": "Drug Safety Study",
                     "summary": "About drugs.",
+                    "published_parsed": self._today_struct_time(),
                 },
             ],
         }
@@ -313,6 +332,8 @@ class TestFetchArxivPapers:
     @patch("content_screening.arxiv_feed.feedparser.parse")
     def test_fetches_from_multiple_categories(self, mock_parse):
         """Test fetching from multiple categories."""
+        today_struct = self._today_struct_time()
+
         def side_effect(url):
             if "cs.AI" in url:
                 return {
@@ -321,6 +342,7 @@ class TestFetchArxivPapers:
                             "id": "oai:arXiv.org:2401.11111",
                             "title": "AI Drug Discovery",
                             "summary": "About drugs.",
+                            "published_parsed": today_struct,
                         },
                     ],
                 }
@@ -331,6 +353,7 @@ class TestFetchArxivPapers:
                             "id": "oai:arXiv.org:2401.22222",
                             "title": "ML for Adverse Events",
                             "summary": "About adverse reactions.",
+                            "published_parsed": today_struct,
                         },
                     ],
                 }
@@ -445,3 +468,61 @@ class TestArxivFeedIntegration:
 
         # Should get some papers from at least some categories
         assert len(articles) >= 0
+
+
+class TestIsPublishedToday:
+    """Tests for _is_published_today function."""
+
+    def _make_struct_time(self, year: int, month: int, day: int):
+        """Create a struct_time for testing."""
+        return time.struct_time((year, month, day, 0, 0, 0, 0, 0, 0))
+
+    def test_returns_true_for_today(self):
+        """Test that entries published today return True."""
+        today = date.today()
+        entry = {
+            "published_parsed": self._make_struct_time(
+                today.year, today.month, today.day
+            )
+        }
+        assert _is_published_today(entry) is True
+
+    def test_returns_false_for_yesterday(self):
+        """Test that entries published yesterday return False."""
+        yesterday = date.today() - timedelta(days=1)
+        entry = {
+            "published_parsed": self._make_struct_time(
+                yesterday.year, yesterday.month, yesterday.day
+            )
+        }
+        assert _is_published_today(entry) is False
+
+    def test_returns_false_for_tomorrow(self):
+        """Test that entries published tomorrow (future) return False."""
+        tomorrow = date.today() + timedelta(days=1)
+        entry = {
+            "published_parsed": self._make_struct_time(
+                tomorrow.year, tomorrow.month, tomorrow.day
+            )
+        }
+        assert _is_published_today(entry) is False
+
+    def test_returns_false_for_future_date(self):
+        """Test that entries with far future dates return False."""
+        future = date.today() + timedelta(days=30)
+        entry = {
+            "published_parsed": self._make_struct_time(
+                future.year, future.month, future.day
+            )
+        }
+        assert _is_published_today(entry) is False
+
+    def test_returns_false_for_no_date(self):
+        """Test that entries without a date return False."""
+        entry = {}
+        assert _is_published_today(entry) is False
+
+    def test_returns_false_for_none_date(self):
+        """Test that entries with None date return False."""
+        entry = {"published_parsed": None}
+        assert _is_published_today(entry) is False

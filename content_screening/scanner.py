@@ -58,6 +58,24 @@ def _notify_about_article(article: Article):
     logger.info(f"Sent notification for article: {article.external_id}")
 
 
+def _count_new_articles(articles: List[Article]) -> int:
+    """Count how many articles are new (not already in the database)."""
+    return sum(
+        1 for article in articles
+        if not article_exists(article.source_type, article.external_id)
+    )
+
+
+def _send_scan_start_notification(source_name: str, total_found: int, new_count: int):
+    """Send a notification about the papers about to be processed."""
+    if new_count == 0:
+        msg = f"[Papers] {source_name} scan: Found {total_found} papers, but none are new."
+    else:
+        msg = f"[Papers] {source_name} scan: Found {total_found} papers, {new_count} are new and will be processed."
+    send_message_to_me(msg)
+    logger.info(msg)
+
+
 def process_new_articles(articles: List[Article]) -> int:
     """
     Process a list of articles: screen with LLM, insert new ones, and notify if relevant.
@@ -99,11 +117,14 @@ def run_arxiv_scan() -> tuple[int, int]:
     logger.info("Starting ArXiv scan")
     articles = fetch_arxiv_papers()
     total_found = len(articles)
+    new_to_process = _count_new_articles(articles)
+
+    _send_scan_start_notification("ArXiv", total_found, new_to_process)
 
     new_count = process_new_articles(articles)
     update_scan_history(SourceType.ARXIV, total_found, new_count)
 
-    logger.info(f"ArXiv scan complete: {total_found} found, {new_count} new")
+    logger.info(f"ArXiv scan complete: {total_found} found, {new_count} notified")
     return total_found, new_count
 
 
@@ -116,11 +137,14 @@ def run_rss_scan() -> tuple[int, int]:
     logger.info("Starting RSS scan")
     articles = fetch_rss_articles()
     total_found = len(articles)
+    new_to_process = _count_new_articles(articles)
+
+    _send_scan_start_notification("RSS", total_found, new_to_process)
 
     new_count = process_new_articles(articles)
     update_scan_history(SourceType.RSS, total_found, new_count)
 
-    logger.info(f"RSS scan complete: {total_found} found, {new_count} new")
+    logger.info(f"RSS scan complete: {total_found} found, {new_count} notified")
     return total_found, new_count
 
 

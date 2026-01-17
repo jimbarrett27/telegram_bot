@@ -518,3 +518,131 @@ class TestRowConversion:
         assert retrieved.title == article.title
         assert retrieved.abstract == article.abstract
         assert retrieved.authors == article.authors
+
+
+@pytest.mark.integration
+class TestDuplicatePaperPrevention:
+    """Integration tests to verify duplicate papers are not processed twice."""
+
+    def test_same_paper_not_inserted_twice(self, temp_db, sample_article):
+        """Test that the same article cannot be inserted twice."""
+        from content_screening.database import (
+            insert_article,
+            article_exists,
+            get_article_by_external_id,
+        )
+
+        # Insert the article first time
+        article_id = insert_article(sample_article)
+        assert article_id > 0
+
+        # Verify it exists
+        assert article_exists(sample_article.source_type, sample_article.external_id)
+
+        # Try to insert again - should raise IntegrityError
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_article(sample_article)
+
+        # Verify only one copy exists
+        retrieved = get_article_by_external_id(
+            sample_article.source_type, sample_article.external_id
+        )
+        assert retrieved.id == article_id
+
+    def test_article_exists_prevents_duplicate_processing(self, temp_db, sample_article):
+        """Test that article_exists can be used to skip duplicate processing."""
+        from content_screening.database import insert_article, article_exists
+
+        # First time - doesn't exist, should process
+        assert not article_exists(sample_article.source_type, sample_article.external_id)
+        insert_article(sample_article)
+
+        # Second time - exists, should skip
+        assert article_exists(sample_article.source_type, sample_article.external_id)
+
+        # This simulates the flow where we check before inserting
+        articles_to_process = [sample_article]
+        new_articles = [
+            a for a in articles_to_process
+            if not article_exists(a.source_type, a.external_id)
+        ]
+        assert len(new_articles) == 0
+
+    def test_different_source_same_external_id_allowed(self, temp_db):
+        """Test that same external_id from different sources are separate."""
+        from content_screening.database import insert_article, article_exists
+
+        article_rss = Article(
+            external_id="shared-id-123",
+            source_type=SourceType.RSS,
+            title="RSS Article",
+            url="https://rss.example.com/shared",
+        )
+        article_arxiv = Article(
+            external_id="shared-id-123",
+            source_type=SourceType.ARXIV,
+            title="ArXiv Article",
+            url="https://arxiv.org/abs/shared",
+        )
+
+        # Both should insert successfully
+        id1 = insert_article(article_rss)
+        id2 = insert_article(article_arxiv)
+
+        assert id1 != id2
+        assert article_exists(SourceType.RSS, "shared-id-123")
+        assert article_exists(SourceType.ARXIV, "shared-id-123")
+
+    def test_batch_processing_filters_duplicates(self, temp_db):
+        """Test processing a batch of articles where some already exist."""
+        from content_screening.database import insert_article, article_exists
+
+        # Pre-insert some articles
+        existing_article = Article(
+            external_id="existing-123",
+            source_type=SourceType.ARXIV,
+            title="Existing Paper",
+            url="https://arxiv.org/abs/existing-123",
+        )
+        insert_article(existing_article)
+
+        # Simulate fetching a batch that includes the existing article
+        fetched_batch = [
+            Article(
+                external_id="existing-123",  # Already exists
+                source_type=SourceType.ARXIV,
+                title="Existing Paper",
+                url="https://arxiv.org/abs/existing-123",
+            ),
+            Article(
+                external_id="new-456",  # New article
+                source_type=SourceType.ARXIV,
+                title="New Paper",
+                url="https://arxiv.org/abs/new-456",
+            ),
+            Article(
+                external_id="new-789",  # New article
+                source_type=SourceType.ARXIV,
+                title="Another New Paper",
+                url="https://arxiv.org/abs/new-789",
+            ),
+        ]
+
+        # Filter to only new articles
+        new_articles = [
+            a for a in fetched_batch
+            if not article_exists(a.source_type, a.external_id)
+        ]
+
+        # Should only have 2 new articles
+        assert len(new_articles) == 2
+        assert all(a.external_id in ["new-456", "new-789"] for a in new_articles)
+
+        # Insert the new ones
+        for article in new_articles:
+            insert_article(article)
+
+        # Now all should exist
+        assert article_exists(SourceType.ARXIV, "existing-123")
+        assert article_exists(SourceType.ARXIV, "new-456")
+        assert article_exists(SourceType.ARXIV, "new-789")
