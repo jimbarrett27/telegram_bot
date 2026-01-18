@@ -1,132 +1,34 @@
 """
 Database operations for the content screening system.
+
+Uses SQLAlchemy ORM for database access. The public API uses dataclass models
+from models.py, with conversion to/from ORM models handled internally.
 """
 
-import json
-import sqlite3
 import time
 from typing import List, Optional
 
-from content_screening.constants import DB_NAME
+from sqlalchemy import select, exists
+
+from content_screening.db_engine import get_engine, get_session
 from content_screening.models import Article, ArticleRating, PendingNotification, SourceType
-
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+from content_screening.orm_models import (
+    Base,
+    ArticleORM,
+    ArticleRatingORM,
+    PendingNotificationORM,
+    ScanHistoryORM,
+    article_orm_to_dataclass,
+    article_dataclass_to_orm,
+    rating_orm_to_dataclass,
+    notification_orm_to_dataclass,
+)
 
 
 def init_db():
     """Initialize the database schema."""
-    conn = get_db_connection()
-    with conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS articles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                external_id TEXT NOT NULL,
-                source_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                abstract TEXT,
-                url TEXT NOT NULL,
-                authors TEXT,
-                categories TEXT,
-                keywords_matched TEXT,
-                discovered_at INTEGER NOT NULL,
-                llm_interest_score REAL,
-                llm_reasoning TEXT,
-                llm_tags TEXT,
-                embedding BLOB,
-                metadata TEXT,
-                UNIQUE(source_type, external_id)
-            )
-        ''')
-        conn.execute('''
-            CREATE INDEX IF NOT EXISTS idx_articles_source_type
-            ON articles(source_type)
-        ''')
-        conn.execute('''
-            CREATE INDEX IF NOT EXISTS idx_articles_discovered_at
-            ON articles(discovered_at)
-        ''')
-
-        # Migration: Add llm_tags column if it doesn't exist
-        cursor = conn.execute('PRAGMA table_info(articles)')
-        columns = [row[1] for row in cursor.fetchall()]
-        if 'llm_tags' not in columns:
-            conn.execute('ALTER TABLE articles ADD COLUMN llm_tags TEXT')
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS article_ratings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                article_id INTEGER NOT NULL,
-                rating INTEGER NOT NULL,
-                rated_at INTEGER NOT NULL,
-                FOREIGN KEY (article_id) REFERENCES articles(id)
-            )
-        ''')
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS pending_article_notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                article_id INTEGER NOT NULL,
-                notified_at INTEGER NOT NULL,
-                rating_received INTEGER DEFAULT 0,
-                FOREIGN KEY (article_id) REFERENCES articles(id),
-                UNIQUE(article_id)
-            )
-        ''')
-
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS scan_history (
-                source_type TEXT PRIMARY KEY,
-                last_scan_epoch INTEGER NOT NULL,
-                articles_found INTEGER DEFAULT 0,
-                articles_interesting INTEGER DEFAULT 0
-            )
-        ''')
-    conn.close()
-
-
-def _row_to_article(row) -> Article:
-    """Convert a database row to an Article object."""
-    return Article(
-        id=row['id'],
-        external_id=row['external_id'],
-        source_type=SourceType(row['source_type']),
-        title=row['title'],
-        abstract=row['abstract'],
-        url=row['url'],
-        authors=json.loads(row['authors']) if row['authors'] else [],
-        categories=json.loads(row['categories']) if row['categories'] else [],
-        keywords_matched=json.loads(row['keywords_matched']) if row['keywords_matched'] else [],
-        discovered_at=row['discovered_at'],
-        llm_interest_score=row['llm_interest_score'],
-        llm_reasoning=row['llm_reasoning'],
-        llm_tags=json.loads(row['llm_tags']) if row['llm_tags'] else [],
-        embedding=row['embedding'],
-        metadata=json.loads(row['metadata']) if row['metadata'] else {},
-    )
-
-
-def _row_to_rating(row) -> ArticleRating:
-    """Convert a database row to an ArticleRating object."""
-    return ArticleRating(
-        id=row['id'],
-        article_id=row['article_id'],
-        rating=row['rating'],
-        rated_at=row['rated_at'],
-    )
-
-
-def _row_to_pending_notification(row) -> PendingNotification:
-    """Convert a database row to a PendingNotification object."""
-    return PendingNotification(
-        id=row['id'],
-        article_id=row['article_id'],
-        notified_at=row['notified_at'],
-        rating_received=bool(row['rating_received']),
-    )
+    engine = get_engine()
+    Base.metadata.create_all(engine)
 
 
 def insert_article(article: Article) -> int:
@@ -134,69 +36,47 @@ def insert_article(article: Article) -> int:
 
     Returns the article id.
     """
-    conn = get_db_connection()
-    with conn:
-        cursor = conn.execute('''
-            INSERT INTO articles (
-                external_id, source_type, title, abstract, url,
-                authors, categories, keywords_matched, discovered_at,
-                llm_interest_score, llm_reasoning, llm_tags, embedding, metadata
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            article.external_id,
-            article.source_type.value,
-            article.title,
-            article.abstract,
-            article.url,
-            json.dumps(article.authors) if article.authors else None,
-            json.dumps(article.categories) if article.categories else None,
-            json.dumps(article.keywords_matched) if article.keywords_matched else None,
-            article.discovered_at or int(time.time()),
-            article.llm_interest_score,
-            article.llm_reasoning,
-            json.dumps(article.llm_tags) if article.llm_tags else None,
-            article.embedding,
-            json.dumps(article.metadata) if article.metadata else None,
-        ))
-        article_id = cursor.lastrowid
-    conn.close()
-    return article_id
+    discovered_at = article.discovered_at or int(time.time())
+    orm = article_dataclass_to_orm(article, discovered_at)
+
+    with get_session() as session:
+        session.add(orm)
+        session.flush()
+        return orm.id
 
 
 def get_article_by_external_id(source_type: SourceType, external_id: str) -> Optional[Article]:
     """Get an article by its external ID and source type."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT * FROM articles
-        WHERE source_type = ? AND external_id = ?
-    ''', (source_type.value, external_id))
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_article(row) if row else None
+    with get_session() as session:
+        stmt = select(ArticleORM).where(
+            ArticleORM.source_type == source_type.value,
+            ArticleORM.external_id == external_id,
+        )
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return None
+        return article_orm_to_dataclass(orm)
 
 
 def get_article_by_id(article_id: int) -> Optional[Article]:
     """Get an article by its database ID."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT * FROM articles WHERE id = ?
-    ''', (article_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_article(row) if row else None
+    with get_session() as session:
+        orm = session.get(ArticleORM, article_id)
+        if orm is None:
+            return None
+        return article_orm_to_dataclass(orm)
 
 
 def article_exists(source_type: SourceType, external_id: str) -> bool:
     """Check if an article already exists in the database."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT 1 FROM articles
-        WHERE source_type = ? AND external_id = ?
-    ''', (source_type.value, external_id))
-    exists = cursor.fetchone() is not None
-    conn.close()
-    return exists
+    with get_session() as session:
+        stmt = select(
+            exists().where(
+                ArticleORM.source_type == source_type.value,
+                ArticleORM.external_id == external_id,
+            )
+        )
+        return session.execute(stmt).scalar()
 
 
 def insert_rating(article_id: int, rating: int) -> int:
@@ -204,107 +84,111 @@ def insert_rating(article_id: int, rating: int) -> int:
 
     Returns the rating id.
     """
-    conn = get_db_connection()
-    with conn:
-        cursor = conn.execute('''
-            INSERT INTO article_ratings (article_id, rating, rated_at)
-            VALUES (?, ?, ?)
-        ''', (article_id, rating, int(time.time())))
-        rating_id = cursor.lastrowid
-    conn.close()
-    return rating_id
+    orm = ArticleRatingORM(
+        article_id=article_id,
+        rating=rating,
+        rated_at=int(time.time()),
+    )
+
+    with get_session() as session:
+        session.add(orm)
+        session.flush()
+        return orm.id
 
 
 def get_ratings_for_article(article_id: int) -> List[ArticleRating]:
     """Get all ratings for an article."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT * FROM article_ratings
-        WHERE article_id = ?
-        ORDER BY rated_at DESC
-    ''', (article_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [_row_to_rating(row) for row in rows]
+    with get_session() as session:
+        stmt = (
+            select(ArticleRatingORM)
+            .where(ArticleRatingORM.article_id == article_id)
+            .order_by(ArticleRatingORM.rated_at.desc())
+        )
+        orms = session.execute(stmt).scalars().all()
+        return [rating_orm_to_dataclass(orm) for orm in orms]
 
 
 def create_pending_notification(article_id: int) -> int:
     """Create a pending notification for an article.
 
-    Returns the notification id.
+    Returns the notification id. If notification already exists, returns 0.
     """
-    conn = get_db_connection()
-    with conn:
-        cursor = conn.execute('''
-            INSERT OR IGNORE INTO pending_article_notifications (article_id, notified_at)
-            VALUES (?, ?)
-        ''', (article_id, int(time.time())))
-        notification_id = cursor.lastrowid
-    conn.close()
-    return notification_id
+    with get_session() as session:
+        # Check if notification already exists (equivalent to INSERT OR IGNORE)
+        stmt = select(PendingNotificationORM).where(
+            PendingNotificationORM.article_id == article_id
+        )
+        existing = session.execute(stmt).scalar_one_or_none()
+        if existing is not None:
+            return 0
+
+        orm = PendingNotificationORM(
+            article_id=article_id,
+            notified_at=int(time.time()),
+            rating_received=0,
+        )
+        session.add(orm)
+        session.flush()
+        return orm.id
 
 
 def get_pending_notifications() -> List[PendingNotification]:
     """Get all notifications awaiting a rating."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT * FROM pending_article_notifications
-        WHERE rating_received = 0
-        ORDER BY notified_at ASC
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
-    return [_row_to_pending_notification(row) for row in rows]
+    with get_session() as session:
+        stmt = (
+            select(PendingNotificationORM)
+            .where(PendingNotificationORM.rating_received == 0)
+            .order_by(PendingNotificationORM.notified_at.asc())
+        )
+        orms = session.execute(stmt).scalars().all()
+        return [notification_orm_to_dataclass(orm) for orm in orms]
 
 
 def get_oldest_pending_notification() -> Optional[PendingNotification]:
     """Get the oldest notification awaiting a rating."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT * FROM pending_article_notifications
-        WHERE rating_received = 0
-        ORDER BY notified_at ASC
-        LIMIT 1
-    ''')
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_pending_notification(row) if row else None
+    with get_session() as session:
+        stmt = (
+            select(PendingNotificationORM)
+            .where(PendingNotificationORM.rating_received == 0)
+            .order_by(PendingNotificationORM.notified_at.asc())
+            .limit(1)
+        )
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return None
+        return notification_orm_to_dataclass(orm)
 
 
 def mark_notification_rated(notification_id: int):
     """Mark a notification as having received a rating."""
-    conn = get_db_connection()
-    with conn:
-        conn.execute('''
-            UPDATE pending_article_notifications
-            SET rating_received = 1
-            WHERE id = ?
-        ''', (notification_id,))
-    conn.close()
+    with get_session() as session:
+        orm = session.get(PendingNotificationORM, notification_id)
+        if orm is not None:
+            orm.rating_received = 1
 
 
 def get_last_scan_time(source_type: SourceType) -> Optional[int]:
     """Get the last scan time for a source type."""
-    conn = get_db_connection()
-    cursor = conn.execute('''
-        SELECT last_scan_epoch FROM scan_history
-        WHERE source_type = ?
-    ''', (source_type.value,))
-    row = cursor.fetchone()
-    conn.close()
-    return row['last_scan_epoch'] if row else None
+    with get_session() as session:
+        orm = session.get(ScanHistoryORM, source_type.value)
+        if orm is None:
+            return None
+        return orm.last_scan_epoch
 
 
 def update_scan_history(source_type: SourceType, articles_found: int = 0, articles_interesting: int = 0):
     """Update the scan history for a source type."""
-    conn = get_db_connection()
-    with conn:
-        conn.execute('''
-            INSERT INTO scan_history (source_type, last_scan_epoch, articles_found, articles_interesting)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(source_type) DO UPDATE SET
-                last_scan_epoch = excluded.last_scan_epoch,
-                articles_found = excluded.articles_found,
-                articles_interesting = excluded.articles_interesting
-        ''', (source_type.value, int(time.time()), articles_found, articles_interesting))
-    conn.close()
+    with get_session() as session:
+        orm = session.get(ScanHistoryORM, source_type.value)
+        if orm is None:
+            orm = ScanHistoryORM(
+                source_type=source_type.value,
+                last_scan_epoch=int(time.time()),
+                articles_found=articles_found,
+                articles_interesting=articles_interesting,
+            )
+            session.add(orm)
+        else:
+            orm.last_scan_epoch = int(time.time())
+            orm.articles_found = articles_found
+            orm.articles_interesting = articles_interesting
