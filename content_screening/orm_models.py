@@ -1,0 +1,195 @@
+"""
+SQLAlchemy ORM models for the content screening system.
+
+These models are internal to the database layer. The public interface
+uses the dataclass models from models.py.
+"""
+
+import json
+from typing import List, Optional
+
+from sqlalchemy import (
+    Boolean,
+    Float,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+from content_screening.models import (
+    Article,
+    ArticleRating,
+    PendingNotification,
+    SourceType,
+)
+
+
+class JSONEncodedList(TypeDecorator):
+    """Represents a list as a JSON-encoded string."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[List], dialect) -> Optional[str]:
+        if value is None or value == []:
+            return None
+        return json.dumps(value)
+
+    def process_result_value(self, value: Optional[str], dialect) -> List:
+        if value is None:
+            return []
+        return json.loads(value)
+
+
+class JSONEncodedDict(TypeDecorator):
+    """Represents a dict as a JSON-encoded string."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[dict], dialect) -> Optional[str]:
+        if value is None or value == {}:
+            return None
+        return json.dumps(value)
+
+    def process_result_value(self, value: Optional[str], dialect) -> dict:
+        if value is None:
+            return {}
+        return json.loads(value)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ArticleORM(Base):
+    """SQLAlchemy model for articles table."""
+
+    __tablename__ = "articles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    authors: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
+    categories: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
+    keywords_matched: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
+    discovered_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    llm_interest_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    llm_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    llm_tags: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
+    embedding: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    # 'metadata' is reserved in SQLAlchemy, so we use 'metadata_' as the Python attribute
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSONEncodedDict, nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("source_type", "external_id", name="uq_source_external"),
+        Index("idx_articles_source_type", "source_type"),
+        Index("idx_articles_discovered_at", "discovered_at"),
+    )
+
+
+class ArticleRatingORM(Base):
+    """SQLAlchemy model for article_ratings table."""
+
+    __tablename__ = "article_ratings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    rated_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PendingNotificationORM(Base):
+    """SQLAlchemy model for pending_article_notifications table."""
+
+    __tablename__ = "pending_article_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    notified_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    rating_received: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ScanHistoryORM(Base):
+    """SQLAlchemy model for scan_history table."""
+
+    __tablename__ = "scan_history"
+
+    source_type: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_scan_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    articles_found: Mapped[int] = mapped_column(Integer, default=0)
+    articles_interesting: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# Conversion functions between ORM models and dataclasses
+
+
+def article_orm_to_dataclass(orm: ArticleORM) -> Article:
+    """Convert an ArticleORM instance to an Article dataclass."""
+    return Article(
+        id=orm.id,
+        external_id=orm.external_id,
+        source_type=SourceType(orm.source_type),
+        title=orm.title,
+        abstract=orm.abstract,
+        url=orm.url,
+        authors=orm.authors or [],
+        categories=orm.categories or [],
+        keywords_matched=orm.keywords_matched or [],
+        discovered_at=orm.discovered_at,
+        llm_interest_score=orm.llm_interest_score,
+        llm_reasoning=orm.llm_reasoning,
+        llm_tags=orm.llm_tags or [],
+        embedding=orm.embedding,
+        metadata=orm.metadata_ or {},
+    )
+
+
+def article_dataclass_to_orm(article: Article, discovered_at: int) -> ArticleORM:
+    """Convert an Article dataclass to an ArticleORM instance."""
+    return ArticleORM(
+        external_id=article.external_id,
+        source_type=article.source_type.value,
+        title=article.title,
+        abstract=article.abstract,
+        url=article.url,
+        authors=article.authors if article.authors else None,
+        categories=article.categories if article.categories else None,
+        keywords_matched=article.keywords_matched if article.keywords_matched else None,
+        discovered_at=discovered_at,
+        llm_interest_score=article.llm_interest_score,
+        llm_reasoning=article.llm_reasoning,
+        llm_tags=article.llm_tags if article.llm_tags else None,
+        embedding=article.embedding,
+        metadata_=article.metadata if article.metadata else None,
+    )
+
+
+def rating_orm_to_dataclass(orm: ArticleRatingORM) -> ArticleRating:
+    """Convert an ArticleRatingORM instance to an ArticleRating dataclass."""
+    return ArticleRating(
+        id=orm.id,
+        article_id=orm.article_id,
+        rating=orm.rating,
+        rated_at=orm.rated_at,
+    )
+
+
+def notification_orm_to_dataclass(orm: PendingNotificationORM) -> PendingNotification:
+    """Convert a PendingNotificationORM instance to a PendingNotification dataclass."""
+    return PendingNotification(
+        id=orm.id,
+        article_id=orm.article_id,
+        notified_at=orm.notified_at,
+        rating_received=bool(orm.rating_received),
+    )

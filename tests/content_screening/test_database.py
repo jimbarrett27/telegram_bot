@@ -1,30 +1,24 @@
 """Tests for content screening database operations."""
 
-import sqlite3
 import time
-from unittest.mock import patch
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 
+from content_screening import db_engine
 from content_screening.models import Article, SourceType
+from content_screening.orm_models import Base
 
 
 @pytest.fixture
-def temp_db(tmp_path):
-    """Create a temporary database for testing."""
-    db_path = tmp_path / "test_content_screening.db"
-
-    # Patch get_db_connection to use our temp database
-    def get_test_connection():
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    with patch("content_screening.database.get_db_connection", get_test_connection):
-        # Import here to get patched version
-        from content_screening.database import init_db
-        init_db()
-        yield get_test_connection
+def temp_db():
+    """Create a temporary in-memory database for testing."""
+    test_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(test_engine)
+    db_engine.set_engine(test_engine)
+    yield test_engine
+    db_engine.reset_engine()
 
 
 @pytest.fixture
@@ -68,12 +62,13 @@ class TestInitDb:
 
     def test_creates_tables(self, temp_db):
         """Test that init_db creates all required tables."""
-        conn = temp_db()
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-        tables = {row["name"] for row in cursor.fetchall()}
-        conn.close()
+        from sqlalchemy import text
+
+        with temp_db.connect() as conn:
+            result = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+            tables = {row[0] for row in result.fetchall()}
 
         assert "articles" in tables
         assert "article_ratings" in tables
@@ -82,12 +77,13 @@ class TestInitDb:
 
     def test_creates_indexes(self, temp_db):
         """Test that init_db creates indexes."""
-        conn = temp_db()
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index'"
-        )
-        indexes = {row["name"] for row in cursor.fetchall()}
-        conn.close()
+        from sqlalchemy import text
+
+        with temp_db.connect() as conn:
+            result = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='index'")
+            )
+            indexes = {row[0] for row in result.fetchall()}
 
         assert "idx_articles_source_type" in indexes
         assert "idx_articles_discovered_at" in indexes
@@ -225,7 +221,7 @@ class TestArticleOperations:
 
         insert_article(sample_article)
 
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(IntegrityError):
             insert_article(sample_article)
 
     def test_same_external_id_different_source(self, temp_db):
@@ -540,7 +536,7 @@ class TestDuplicatePaperPrevention:
         assert article_exists(sample_article.source_type, sample_article.external_id)
 
         # Try to insert again - should raise IntegrityError
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(IntegrityError):
             insert_article(sample_article)
 
         # Verify only one copy exists
