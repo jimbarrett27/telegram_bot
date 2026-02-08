@@ -13,6 +13,7 @@ from swedish import swedish_bot
 from content_screening.database import init_db as init_screening_db
 from content_screening import screening_bot
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
+from minecraft.healthcheck import run_healthcheck, run_on_demand_check
 from content_screening.scanner import run_daily_scan_if_due
 from util.logging_util import setup_logger, log_telegram_message_received
 
@@ -23,7 +24,7 @@ MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🇸🇪 Practise", "📝 Add Word"],
         ["📚 Papers Status", "🔍 Scan Papers"],
-        ["❓ Help"],
+        ["🖥️ Server Status", "❓ Help"],
     ],
     resize_keyboard=True,
 )
@@ -51,6 +52,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 • 📚 Papers Status - Show pending articles
 • 🔍 Scan Papers - Scan ArXiv and RSS feeds
 • papers status / papers scan - Text commands
+
+🖥️ Minecraft Server:
+• 🖥️ Server Status - Check server & tunnel health
+• Automatic checks run every 5 minutes with alerts on changes
 
 Use /start to show the menu keyboard."""
     await update.message.reply_text(help_text, reply_markup=MAIN_MENU_KEYBOARD)
@@ -112,6 +117,16 @@ async def handle_rating_reply(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
+async def handle_server_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle server status button - run on-demand healthcheck."""
+    log_telegram_message_received(logger, str(update.effective_chat.id),
+                                  update.effective_user.username or "unknown",
+                                  update.message.text)
+    await update.message.reply_text("Checking server status...")
+    msg = run_on_demand_check()
+    await update.message.reply_text(msg, reply_markup=MAIN_MENU_KEYBOARD)
+
+
 async def periodic_tasks(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Run periodic background tasks (called by job queue)."""
     try:
@@ -119,6 +134,14 @@ async def periodic_tasks(context: ContextTypes.DEFAULT_TYPE) -> None:
         run_daily_scan_if_due()
     except Exception as e:
         logger.error(f"Error in periodic tasks: {e}")
+
+
+async def healthcheck_task(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run periodic healthcheck (called by job queue every 5 minutes)."""
+    try:
+        run_healthcheck()
+    except Exception as e:
+        logger.error(f"Error in healthcheck: {e}")
 
 
 def main():
@@ -143,6 +166,11 @@ def main():
     ))
     app.add_handler(MessageHandler(
         filters.Regex(r"^🔍 Scan Papers$"), handle_papers_scan
+    ))
+
+    # Server status button
+    app.add_handler(MessageHandler(
+        filters.Regex(r"^🖥️ Server Status$"), handle_server_status
     ))
 
     # Help button
@@ -171,6 +199,7 @@ def main():
     # Schedule periodic tasks (minecraft logs, daily scans) - run every 60 seconds
     if app.job_queue:
         app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
+        app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
     else:
         logger.warning("JobQueue not available - periodic tasks disabled. Install with: pip install 'python-telegram-bot[job-queue]'")
 
