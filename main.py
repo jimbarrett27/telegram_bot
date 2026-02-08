@@ -13,7 +13,7 @@ from swedish import swedish_bot
 from content_screening.database import init_db as init_screening_db
 from content_screening import screening_bot
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
-from minecraft.healthcheck import run_healthcheck, run_on_demand_check
+from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
 from content_screening.scanner import run_daily_scan_if_due
 from util.logging_util import setup_logger, log_telegram_message_received
 
@@ -55,7 +55,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 🖥️ Minecraft Server:
 • 🖥️ Server Status - Check server & tunnel health
-• Automatic checks run every 5 minutes with alerts on changes
+• Daily summary at 10am, with instant alerts on changes
 
 Use /start to show the menu keyboard."""
     await update.message.reply_text(help_text, reply_markup=MAIN_MENU_KEYBOARD)
@@ -144,6 +144,14 @@ async def healthcheck_task(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error in healthcheck: {e}")
 
 
+async def daily_summary_task(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send daily healthcheck summary (called by job queue once a day)."""
+    try:
+        run_daily_summary()
+    except Exception as e:
+        logger.error(f"Error in daily summary: {e}")
+
+
 def main():
     print("Starting telegram bot...")
     init_swedish_db()
@@ -198,8 +206,10 @@ def main():
 
     # Schedule periodic tasks (minecraft logs, daily scans) - run every 60 seconds
     if app.job_queue:
+        from datetime import time as dt_time
         app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
         app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
+        app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
     else:
         logger.warning("JobQueue not available - periodic tasks disabled. Install with: pip install 'python-telegram-bot[job-queue]'")
 

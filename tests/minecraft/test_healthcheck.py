@@ -14,6 +14,7 @@ from minecraft.healthcheck import (
     format_summary,
     format_alert,
     run_healthcheck,
+    run_daily_summary,
     run_on_demand_check,
     _format_status_line,
     _format_change_line,
@@ -25,10 +26,8 @@ import minecraft.healthcheck as healthcheck_module
 def reset_module_state():
     """Reset module-level state between tests."""
     healthcheck_module._previous_status = None
-    healthcheck_module._check_count = 0
     yield
     healthcheck_module._previous_status = None
-    healthcheck_module._check_count = 0
 
 
 class TestHealthStatus:
@@ -221,21 +220,18 @@ class TestRunAllChecks:
 class TestRunHealthcheck:
     @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_first_run_sends_summary(self, mock_checks, mock_send):
+    def test_first_run_no_message(self, mock_checks, mock_send):
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
         run_healthcheck()
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][0]
-        assert "Minecraft Server Status" in msg
+        mock_send.assert_not_called()
 
     @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
     def test_no_change_no_message(self, mock_checks, mock_send):
         status = HealthStatus(True, True, True, True, True, datetime.now())
         mock_checks.return_value = status
-        run_healthcheck()  # first run - sends summary
-        mock_send.reset_mock()
-        run_healthcheck()  # second run - no change, not at summary interval
+        run_healthcheck()  # first run
+        run_healthcheck()  # second run - no change
         mock_send.assert_not_called()
 
     @patch("minecraft.healthcheck.send_message_to_me")
@@ -243,7 +239,6 @@ class TestRunHealthcheck:
     def test_state_change_sends_alert(self, mock_checks, mock_send):
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
         run_healthcheck()  # first run
-        mock_send.reset_mock()
 
         mock_checks.return_value = HealthStatus(False, True, True, True, True, datetime.now())
         run_healthcheck()  # state change
@@ -252,29 +247,16 @@ class TestRunHealthcheck:
         assert "Alert" in msg
         assert "DOWN (was UP)" in msg
 
+
+class TestRunDailySummary:
     @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_periodic_summary_at_interval(self, mock_checks, mock_send):
-        status = HealthStatus(True, True, True, True, True, datetime.now())
-        mock_checks.return_value = status
-
-        # Run SUMMARY_EVERY_N_CHECKS times (12)
-        for _ in range(12):
-            run_healthcheck()
-
-        # First call is run #1 (initial summary), then run #12 triggers periodic summary
-        assert mock_send.call_count == 2
-        last_msg = mock_send.call_args[0][0]
-        assert "Minecraft Server Status" in last_msg
-
-    @patch("minecraft.healthcheck.send_message_to_me")
-    @patch("minecraft.healthcheck.run_all_checks")
-    def test_check_count_increments(self, mock_checks, mock_send):
+    def test_sends_summary(self, mock_checks, mock_send):
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
-        run_healthcheck()
-        assert healthcheck_module._check_count == 1
-        run_healthcheck()
-        assert healthcheck_module._check_count == 2
+        run_daily_summary()
+        mock_send.assert_called_once()
+        msg = mock_send.call_args[0][0]
+        assert "Minecraft Server Status" in msg
 
 
 class TestRunOnDemandCheck:

@@ -20,7 +20,6 @@ JAVA_TUNNEL_PORT = 33862
 BEDROCK_TUNNEL_HOST = "classic-uptown.gl.at.ply.gg"
 BEDROCK_TUNNEL_PORT = 39031
 PLAYIT_SERVICE_NAME = "playit.service"
-SUMMARY_EVERY_N_CHECKS = 12  # ~hourly at 5-min intervals
 
 
 @dataclass
@@ -35,7 +34,6 @@ class HealthStatus:
 
 # Module-level state tracking
 _previous_status: HealthStatus | None = None
-_check_count: int = 0
 
 
 def check_tcp_connect(host: str, port: int, timeout: float = 5) -> bool:
@@ -148,15 +146,13 @@ def format_alert(current: HealthStatus, previous: HealthStatus) -> str:
 
 
 def run_healthcheck() -> None:
-    """Main healthcheck function called from the periodic task loop."""
-    global _previous_status, _check_count
+    """Main healthcheck function called every 5 minutes to detect state changes."""
+    global _previous_status
 
     status = run_all_checks()
-    _check_count += 1
 
     logger.info(
-        "Healthcheck #%d: java_local=%s bedrock_local=%s playit=%s java_tunnel=%s bedrock_tunnel=%s",
-        _check_count,
+        "Healthcheck: java_local=%s bedrock_local=%s playit=%s java_tunnel=%s bedrock_tunnel=%s",
         status.java_local,
         status.bedrock_local,
         status.playit_service,
@@ -164,7 +160,7 @@ def run_healthcheck() -> None:
         status.bedrock_tunnel,
     )
 
-    # Detect state changes
+    # Detect state changes and alert
     if _previous_status is not None:
         changed = any(
             getattr(status, field) != getattr(_previous_status, field)
@@ -173,15 +169,15 @@ def run_healthcheck() -> None:
         if changed:
             msg = format_alert(status, _previous_status)
             send_message_to_me(msg)
-            _previous_status = status
-            return
-
-    # Periodic summary (every SUMMARY_EVERY_N_CHECKS runs, or on first run)
-    if _previous_status is None or _check_count % SUMMARY_EVERY_N_CHECKS == 0:
-        msg = format_summary(status)
-        send_message_to_me(msg)
 
     _previous_status = status
+
+
+def run_daily_summary() -> None:
+    """Send a daily status summary."""
+    status = run_all_checks()
+    msg = format_summary(status)
+    send_message_to_me(msg)
 
 
 def run_on_demand_check() -> str:
