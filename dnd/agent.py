@@ -8,7 +8,8 @@ import logging
 from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.tools import tool as tool_decorator
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -107,6 +108,36 @@ class Agent:
                     return "".join(text_parts)
                 return content
         return "The Dungeon Master is silent..."
+
+    def as_tool(self, description: str):
+        """Create a LangChain tool that invokes this agent with a query string.
+
+        This allows a parent agent to use this agent as one of its tools.
+
+        Args:
+            description: Tool description that tells the parent LLM what this
+                         agent does and when to use it.
+        """
+        agent = self
+
+        @tool_decorator(agent.name, description=description)
+        def _invoke(query: str) -> str:
+            logger.info("Agent-as-tool invoked: %s", agent.name)
+            result = agent.invoke([HumanMessage(content=query)])
+            for msg in reversed(result["messages"]):
+                if msg.type == "ai" and msg.content:
+                    content = msg.content
+                    if isinstance(content, list):
+                        text_parts = [
+                            part.get("text", "")
+                            for part in content
+                            if isinstance(part, dict) and "text" in part
+                        ]
+                        return "".join(text_parts)
+                    return content
+            return "No response from agent"
+
+        return _invoke
 
     def __repr__(self) -> str:
         tool_names = [t.name for t in self.tools]

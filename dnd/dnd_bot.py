@@ -12,9 +12,14 @@ from dnd.database import (
     create_game,
     get_game_by_chat,
     add_player,
+    add_inventory_item,
+    create_spell_slots,
     get_player_by_user,
+    get_player_inventory,
+    get_spell_slots,
     delete_game,
 )
+from dnd.character_templates import get_template
 from dnd.game_logic import (
     get_active_player,
     start_game,
@@ -89,13 +94,34 @@ async def dnd_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     character_class = CharacterClass(class_str)
+    template = get_template(character_class)
+    attrs = template["attributes"]
+
     player = add_player(
         game_id=game.id,
         telegram_user_id=user.id,
         telegram_username=user.username or user.first_name,
         character_name=character_name,
         character_class=character_class,
+        hp=template["hp"],
+        max_hp=template["max_hp"],
+        **attrs,
     )
+
+    # Set up starting inventory
+    for item in template["starting_inventory"]:
+        add_inventory_item(
+            player_id=player.id,
+            game_id=game.id,
+            item_name=item["item_name"],
+            item_type=item["item_type"],
+            quantity=item["quantity"],
+            equipped=item.get("equipped", False),
+        )
+
+    # Set up spell slots
+    if template["spell_slots"]:
+        create_spell_slots(player_id=player.id, **template["spell_slots"])
 
     player_count = len(game.players) + 1
     await update.message.reply_text(
@@ -208,14 +234,48 @@ async def dnd_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("You're not in this game.")
         return
 
-    sheet = (
-        f"--- Character Sheet ---\n"
-        f"Name: {player.character_name}\n"
-        f"Class: {player.character_class.value.title()}\n"
-        f"Level: {player.level}\n"
-        f"HP: {player.hp}/{player.max_hp}\n"
-    )
-    await update.message.reply_text(sheet)
+    # Ability scores with modifiers
+    def _mod(score):
+        m = (score - 10) // 2
+        return f"+{m}" if m >= 0 else str(m)
+
+    sheet_lines = [
+        f"--- Character Sheet ---",
+        f"Name: {player.character_name}",
+        f"Class: {player.character_class.value.title()}",
+        f"Level: {player.level}",
+        f"HP: {player.hp}/{player.max_hp}",
+        f"",
+        f"--- Ability Scores ---",
+        f"STR: {player.strength} ({_mod(player.strength)})  DEX: {player.dexterity} ({_mod(player.dexterity)})",
+        f"CON: {player.constitution} ({_mod(player.constitution)})  INT: {player.intelligence} ({_mod(player.intelligence)})",
+        f"WIS: {player.wisdom} ({_mod(player.wisdom)})  CHA: {player.charisma} ({_mod(player.charisma)})",
+    ]
+
+    # Inventory
+    items = get_player_inventory(player.id)
+    if items:
+        sheet_lines.append("")
+        sheet_lines.append("--- Inventory ---")
+        for item in items:
+            equipped = " [E]" if item.equipped else ""
+            qty = f" x{item.quantity}" if item.quantity > 1 else ""
+            sheet_lines.append(f"  {item.item_name}{qty}{equipped}")
+
+    # Spell slots
+    slots = get_spell_slots(player.id)
+    if slots:
+        has_slots = any(getattr(slots, f"max_level_{i}") > 0 for i in range(1, 10))
+        if has_slots:
+            sheet_lines.append("")
+            sheet_lines.append("--- Spell Slots ---")
+            for lvl in range(1, 10):
+                current = getattr(slots, f"level_{lvl}")
+                maximum = getattr(slots, f"max_level_{lvl}")
+                if maximum > 0:
+                    sheet_lines.append(f"  Level {lvl}: {current}/{maximum}")
+
+    await update.message.reply_text("\n".join(sheet_lines))
 
 
 async def dnd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

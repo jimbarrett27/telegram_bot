@@ -15,6 +15,8 @@ from dnd.models import (
     Game,
     Player,
     GameEvent,
+    InventoryItem,
+    SpellSlots,
     GameStatus,
     CharacterClass,
     EventType,
@@ -24,9 +26,13 @@ from dnd.orm_models import (
     GameORM,
     PlayerORM,
     GameEventORM,
+    InventoryItemORM,
+    SpellSlotsORM,
     game_orm_to_dataclass,
     player_orm_to_dataclass,
     event_orm_to_dataclass,
+    inventory_orm_to_dataclass,
+    spell_slots_orm_to_dataclass,
 )
 
 
@@ -88,6 +94,14 @@ def add_player(
     telegram_username: str,
     character_name: str,
     character_class: CharacterClass,
+    hp: int = 20,
+    max_hp: int = 20,
+    strength: int = 10,
+    dexterity: int = 10,
+    constitution: int = 10,
+    intelligence: int = 10,
+    wisdom: int = 10,
+    charisma: int = 10,
 ) -> Player:
     """Add a player to a game. Returns the created Player."""
     now = int(time.time())
@@ -98,9 +112,15 @@ def add_player(
             telegram_username=telegram_username,
             character_name=character_name,
             character_class=character_class.value,
-            hp=20,
-            max_hp=20,
+            hp=hp,
+            max_hp=max_hp,
             level=1,
+            strength=strength,
+            dexterity=dexterity,
+            constitution=constitution,
+            intelligence=intelligence,
+            wisdom=wisdom,
+            charisma=charisma,
             joined_at=now,
         )
         session.add(orm)
@@ -215,15 +235,187 @@ def delete_game(chat_id: int):
         if game_orm is None:
             return
 
+        # Delete inventory items
+        inv_stmt = select(InventoryItemORM).where(InventoryItemORM.game_id == game_orm.id)
+        for item in session.execute(inv_stmt).scalars().all():
+            session.delete(item)
+
+        # Delete spell slots (via players)
+        player_stmt = select(PlayerORM).where(PlayerORM.game_id == game_orm.id)
+        player_orms = session.execute(player_stmt).scalars().all()
+        for player in player_orms:
+            ss_stmt = select(SpellSlotsORM).where(SpellSlotsORM.player_id == player.id)
+            for ss in session.execute(ss_stmt).scalars().all():
+                session.delete(ss)
+
         # Delete events
         event_stmt = select(GameEventORM).where(GameEventORM.game_id == game_orm.id)
         for event in session.execute(event_stmt).scalars().all():
             session.delete(event)
 
         # Delete players
-        player_stmt = select(PlayerORM).where(PlayerORM.game_id == game_orm.id)
-        for player in session.execute(player_stmt).scalars().all():
+        for player in player_orms:
             session.delete(player)
 
         # Delete game
         session.delete(game_orm)
+
+
+# --- Inventory operations ---
+
+
+def add_inventory_item(
+    player_id: int,
+    game_id: int,
+    item_name: str,
+    item_type: str = "gear",
+    quantity: int = 1,
+    equipped: bool = False,
+    properties: Optional[str] = None,
+) -> InventoryItem:
+    """Add an item to a player's inventory."""
+    now = int(time.time())
+    with get_session() as session:
+        orm = InventoryItemORM(
+            player_id=player_id,
+            game_id=game_id,
+            item_name=item_name,
+            item_type=item_type,
+            quantity=quantity,
+            equipped=int(equipped),
+            properties=properties,
+            created_at=now,
+        )
+        session.add(orm)
+        session.flush()
+        return inventory_orm_to_dataclass(orm)
+
+
+def get_player_inventory(player_id: int) -> List[InventoryItem]:
+    """Get all inventory items for a player."""
+    with get_session() as session:
+        stmt = select(InventoryItemORM).where(InventoryItemORM.player_id == player_id)
+        orms = session.execute(stmt).scalars().all()
+        return [inventory_orm_to_dataclass(orm) for orm in orms]
+
+
+def update_inventory_item_quantity(item_id: int, quantity: int):
+    """Update the quantity of an inventory item. Deletes if quantity <= 0."""
+    with get_session() as session:
+        orm = session.get(InventoryItemORM, item_id)
+        if orm is None:
+            return
+        if quantity <= 0:
+            session.delete(orm)
+        else:
+            orm.quantity = quantity
+
+
+def update_inventory_item_equipped(item_id: int, equipped: bool):
+    """Set an inventory item's equipped state."""
+    with get_session() as session:
+        orm = session.get(InventoryItemORM, item_id)
+        if orm is not None:
+            orm.equipped = int(equipped)
+
+
+def remove_inventory_item_by_name(player_id: int, item_name: str, quantity: int = 1) -> bool:
+    """Remove quantity of an item from a player's inventory by name.
+
+    Returns True if the item was found and removed/decremented, False otherwise.
+    """
+    with get_session() as session:
+        stmt = select(InventoryItemORM).where(
+            InventoryItemORM.player_id == player_id,
+            InventoryItemORM.item_name == item_name,
+        )
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return False
+        new_qty = orm.quantity - quantity
+        if new_qty <= 0:
+            session.delete(orm)
+        else:
+            orm.quantity = new_qty
+        return True
+
+
+# --- Spell slot operations ---
+
+
+def create_spell_slots(player_id: int, **slot_values) -> SpellSlots:
+    """Create spell slots for a player. Pass level_N and max_level_N kwargs."""
+    with get_session() as session:
+        orm = SpellSlotsORM(player_id=player_id, **slot_values)
+        session.add(orm)
+        session.flush()
+        return spell_slots_orm_to_dataclass(orm)
+
+
+def get_spell_slots(player_id: int) -> Optional[SpellSlots]:
+    """Get spell slots for a player."""
+    with get_session() as session:
+        stmt = select(SpellSlotsORM).where(SpellSlotsORM.player_id == player_id)
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return None
+        return spell_slots_orm_to_dataclass(orm)
+
+
+def use_spell_slot(player_id: int, level: int) -> bool:
+    """Consume one spell slot of the given level. Returns True if successful."""
+    if level < 1 or level > 9:
+        return False
+    col_name = f"level_{level}"
+    with get_session() as session:
+        stmt = select(SpellSlotsORM).where(SpellSlotsORM.player_id == player_id)
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return False
+        current = getattr(orm, col_name)
+        if current <= 0:
+            return False
+        setattr(orm, col_name, current - 1)
+        return True
+
+
+def restore_spell_slots(player_id: int):
+    """Restore all spell slots to max (long rest)."""
+    with get_session() as session:
+        stmt = select(SpellSlotsORM).where(SpellSlotsORM.player_id == player_id)
+        orm = session.execute(stmt).scalar_one_or_none()
+        if orm is None:
+            return
+        for lvl in range(1, 10):
+            setattr(orm, f"level_{lvl}", getattr(orm, f"max_level_{lvl}"))
+
+
+# --- Player attribute operations ---
+
+
+def get_player_attributes(player_id: int) -> Optional[dict]:
+    """Get a player's ability scores as a dict."""
+    with get_session() as session:
+        orm = session.get(PlayerORM, player_id)
+        if orm is None:
+            return None
+        return {
+            "strength": orm.strength,
+            "dexterity": orm.dexterity,
+            "constitution": orm.constitution,
+            "intelligence": orm.intelligence,
+            "wisdom": orm.wisdom,
+            "charisma": orm.charisma,
+        }
+
+
+def update_player_attributes(player_id: int, **attrs):
+    """Update a player's ability scores. Pass attribute_name=value kwargs."""
+    valid_attrs = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+    with get_session() as session:
+        orm = session.get(PlayerORM, player_id)
+        if orm is None:
+            return
+        for attr, value in attrs.items():
+            if attr in valid_attrs:
+                setattr(orm, attr, value)

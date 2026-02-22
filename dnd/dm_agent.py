@@ -2,7 +2,8 @@
 Dungeon Master agent factory.
 
 Creates a ReAct agent configured as a D&D Dungeon Master with tools
-for dice rolling, party management, and game state queries.
+for dice rolling, party management, game state queries, inventory
+management, and sub-agents for rules validation and spell checking.
 """
 
 import logging
@@ -11,6 +12,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from dnd.agent import Agent
 from dnd.tools import DMTools
+from dnd.inventory_tools import InventoryTools
+from dnd.rules_lawyer import create_rules_lawyer
+from dnd.spell_checker import create_spell_checker
 from dnd.database import get_game_by_id, get_recent_events
 from gcp_util.secrets import get_gemini_api_key
 
@@ -34,6 +38,16 @@ the game fun and dramatic. You are an impartial referee — the dice decide outc
 
 ## Rules for Running the Game
 
+### Rules Validation — IMPORTANT
+- Before resolving ANY physical action (attacking, using an item, etc.), you MUST call the \
+rules_lawyer tool to validate the action. Pass it the player name and what they're trying to do.
+- Before allowing ANY spell to be cast, you MUST call the spell_checker tool. Pass it the \
+caster name and the spell they want to cast.
+- If the rules_lawyer or spell_checker returns INVALID, inform the player why their action \
+is not possible and ask them to try something else. Do NOT resolve invalid actions.
+- If they return CONDITIONAL, proceed with the required check (dice roll).
+- If they return VALID, proceed to resolve the action.
+
 ### Dice Rolls
 - ALWAYS use the roll_dice tool for uncertain outcomes. Never decide success/failure yourself.
 - For skill checks and attack rolls: roll 1d20, then compare against a Difficulty Class (DC) you set:
@@ -50,6 +64,12 @@ the game fun and dramatic. You are an impartial referee — the dice decide outc
 - Use the apply_damage tool to record HP changes. Always provide a reason.
 - Damage should be proportional to the threat (goblins deal 1d6, a bugbear deals 2d6, etc.)
 - If a player reaches 0 HP, they are unconscious and dying.
+
+### Inventory Management
+- Use check_inventory to see what a player is carrying.
+- Use add_item when a player picks up loot or receives items.
+- Use remove_item when items are consumed (potions), thrown, or broken.
+- Use equip_item / unequip_item when players change their gear.
 
 ### Party Status
 - Use get_party_status to check current HP before making decisions.
@@ -87,9 +107,10 @@ def _build_party_status(game) -> str:
     lines = []
     for p in game.players:
         status = "DEAD" if p.hp <= 0 else f"{p.hp}/{p.max_hp} HP"
+        attrs = f"STR:{p.strength} DEX:{p.dexterity} CON:{p.constitution} INT:{p.intelligence} WIS:{p.wisdom} CHA:{p.charisma}"
         lines.append(
             f"- {p.character_name} ({p.character_class.value.title()}) "
-            f"[{status}] Level {p.level}"
+            f"[{status}] Level {p.level} | {attrs}"
         )
     return "\n".join(lines)
 
@@ -108,10 +129,10 @@ def _build_recent_history(game_id: int, limit: int = 30) -> str:
 def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05-20") -> Agent:
     """Create a Dungeon Master agent for the given game.
 
-    The agent is configured with the game's adventure text, current party
-    status, and recent history baked into its system prompt. It has tools
-    for dice rolling, party status checks, damage application, and
-    history retrieval.
+    The agent is configured with:
+    - Adventure text, party status, and history in its system prompt
+    - Direct tools: dice, party status, damage, history, inventory management
+    - Sub-agent tools: rules_lawyer (validates physical actions), spell_checker (validates spells)
 
     Args:
         game_id: The database ID of the game.
@@ -136,11 +157,34 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
         google_api_key=api_key,
     )
 
+    # Direct tools
     dm_tools = DMTools(game_id)
+    inventory_tools = InventoryTools(game_id)
+    all_tools = dm_tools.as_tools() + inventory_tools.as_tools()
+
+    # Sub-agent tools (rules validation)
+    rules_lawyer = create_rules_lawyer(game_id, llm)
+    spell_checker = create_spell_checker(game_id, llm)
+
+    all_tools.append(
+        rules_lawyer.as_tool(
+            "Validate a player's physical action (attacking, using items, feats of strength, etc.) "
+            "against their inventory and attributes. Call this BEFORE resolving any physical action. "
+            "Pass a query like: 'Can Aragorn attack with a longsword?' or 'Can Lyra use thieves tools "
+            "to pick the lock?'"
+        )
+    )
+    all_tools.append(
+        spell_checker.as_tool(
+            "Validate a player's spell cast against their class spell list, spell slots, and components. "
+            "Call this BEFORE allowing any spell to be cast. "
+            "Pass a query like: 'Can Gandalf cast Fireball?' or 'Can Elara cast Cure Wounds on Aragorn?'"
+        )
+    )
 
     return Agent(
         name="dungeon_master",
         system_prompt=system_prompt,
-        tools=dm_tools.as_tools(),
+        tools=all_tools,
         llm=llm,
     )

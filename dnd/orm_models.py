@@ -15,6 +15,8 @@ from dnd.models import (
     Game,
     Player,
     GameEvent,
+    InventoryItem,
+    SpellSlots,
     GameStatus,
     CharacterClass,
     EventType,
@@ -54,11 +56,69 @@ class PlayerORM(Base):
     hp: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     max_hp: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    strength: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    dexterity: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    constitution: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    intelligence: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    wisdom: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    charisma: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     joined_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("game_id", "telegram_user_id", name="uq_game_player"),
         Index("idx_players_game_id", "game_id"),
+    )
+
+
+class InventoryItemORM(Base):
+    """SQLAlchemy model for inventory_items table."""
+
+    __tablename__ = "inventory_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(Integer, ForeignKey("players.id"), nullable=False)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    item_name: Mapped[str] = mapped_column(Text, nullable=False)
+    item_type: Mapped[str] = mapped_column(Text, nullable=False, default="gear")
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    equipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    properties: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_inventory_player_id", "player_id"),
+        Index("idx_inventory_game_id", "game_id"),
+    )
+
+
+class SpellSlotsORM(Base):
+    """SQLAlchemy model for spell_slots table."""
+
+    __tablename__ = "spell_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(Integer, ForeignKey("players.id"), nullable=False)
+    level_1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_2: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_3: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_4: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_5: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_6: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_7: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_8: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    level_9: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_2: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_3: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_4: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_5: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_6: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_7: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_8: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_level_9: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("player_id", name="uq_spell_slots_player"),
     )
 
 
@@ -110,7 +170,54 @@ def player_orm_to_dataclass(orm: PlayerORM) -> Player:
         hp=orm.hp,
         max_hp=orm.max_hp,
         level=orm.level,
+        strength=orm.strength,
+        dexterity=orm.dexterity,
+        constitution=orm.constitution,
+        intelligence=orm.intelligence,
+        wisdom=orm.wisdom,
+        charisma=orm.charisma,
         joined_at=orm.joined_at or 0,
+    )
+
+
+def inventory_orm_to_dataclass(orm: InventoryItemORM) -> InventoryItem:
+    """Convert an InventoryItemORM instance to an InventoryItem dataclass."""
+    return InventoryItem(
+        id=orm.id,
+        player_id=orm.player_id,
+        game_id=orm.game_id,
+        item_name=orm.item_name,
+        item_type=orm.item_type,
+        quantity=orm.quantity,
+        equipped=bool(orm.equipped),
+        properties=orm.properties,
+        created_at=orm.created_at or 0,
+    )
+
+
+def spell_slots_orm_to_dataclass(orm: SpellSlotsORM) -> SpellSlots:
+    """Convert a SpellSlotsORM instance to a SpellSlots dataclass."""
+    return SpellSlots(
+        id=orm.id,
+        player_id=orm.player_id,
+        level_1=orm.level_1,
+        level_2=orm.level_2,
+        level_3=orm.level_3,
+        level_4=orm.level_4,
+        level_5=orm.level_5,
+        level_6=orm.level_6,
+        level_7=orm.level_7,
+        level_8=orm.level_8,
+        level_9=orm.level_9,
+        max_level_1=orm.max_level_1,
+        max_level_2=orm.max_level_2,
+        max_level_3=orm.max_level_3,
+        max_level_4=orm.max_level_4,
+        max_level_5=orm.max_level_5,
+        max_level_6=orm.max_level_6,
+        max_level_7=orm.max_level_7,
+        max_level_8=orm.max_level_8,
+        max_level_9=orm.max_level_9,
     )
 
 

@@ -37,7 +37,50 @@ class Player:
     hp: int = 20
     max_hp: int = 20
     level: int = 1
+    strength: int = 10
+    dexterity: int = 10
+    constitution: int = 10
+    intelligence: int = 10
+    wisdom: int = 10
+    charisma: int = 10
     joined_at: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
+class InventoryItem:
+    player_id: int
+    game_id: int
+    item_name: str
+    item_type: str = "gear"
+    quantity: int = 1
+    equipped: bool = False
+    properties: Optional[str] = None
+    created_at: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
+class SpellSlots:
+    player_id: int
+    level_1: int = 0
+    level_2: int = 0
+    level_3: int = 0
+    level_4: int = 0
+    level_5: int = 0
+    level_6: int = 0
+    level_7: int = 0
+    level_8: int = 0
+    level_9: int = 0
+    max_level_1: int = 0
+    max_level_2: int = 0
+    max_level_3: int = 0
+    max_level_4: int = 0
+    max_level_5: int = 0
+    max_level_6: int = 0
+    max_level_7: int = 0
+    max_level_8: int = 0
+    max_level_9: int = 0
     id: Optional[int] = None
 
 
