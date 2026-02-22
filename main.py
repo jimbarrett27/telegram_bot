@@ -15,6 +15,8 @@ from content_screening import screening_bot
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
 from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
 from content_screening.scanner import run_daily_scan_if_due
+from dnd.database import init_db as init_dnd_db
+from dnd.dnd_bot import get_handlers as get_dnd_handlers
 from util.logging_util import setup_logger, log_telegram_message_received
 
 logger = setup_logger(__name__)
@@ -56,6 +58,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 🖥️ Minecraft Server:
 • 🖥️ Server Status - Check server & tunnel health
 • Daily summary at 10am, with instant alerts on changes
+
+🎲 D&D (group chat):
+• /dnd_new - Create a new game
+• /dnd_join <name> <class> - Join with a character
+• /dnd_start - Begin the adventure
+• /dnd_action <text> - Take your turn
+• /dnd_sheet - View your character
+• /dnd_status - Show game status
+• /dnd_end - End the game
 
 Use /start to show the menu keyboard."""
     await update.message.reply_text(help_text, reply_markup=MAIN_MENU_KEYBOARD)
@@ -156,6 +167,7 @@ def main():
     print("Starting telegram bot...")
     init_swedish_db()
     init_screening_db()
+    init_dnd_db()
     populate_db()
 
     app = Application.builder().token(get_telegram_bot_key()).build()
@@ -167,6 +179,10 @@ def main():
     # Swedish bot conversation handlers
     app.add_handler(swedish_bot.get_practice_conversation_handler())
     app.add_handler(swedish_bot.get_add_word_conversation_handler())
+
+    # D&D command handlers (group chat)
+    for handler in get_dnd_handlers():
+        app.add_handler(handler)
 
     # Button handlers for papers
     app.add_handler(MessageHandler(
