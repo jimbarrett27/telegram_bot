@@ -20,6 +20,7 @@ from dnd.database import (
     add_event,
 )
 from dnd.dm_agent import create_dm_agent
+from dnd.summarizer import summarize_events
 from dnd.pdf_parser import (
     parse_adventure_pdf,
     get_adventure_path,
@@ -232,6 +233,12 @@ def finalize_action(game: Game, player: Player, resolution_text: str) -> tuple[s
         event_type=EventType.RESOLUTION,
         content=resolution_text,
     )
+
+    # Update the running story summary after each resolution
+    try:
+        summarize_events(game.id)
+    except Exception:
+        logger.exception("Failed to summarize events for game_id=%d", game.id)
 
     next_player = advance_turn(game)
 

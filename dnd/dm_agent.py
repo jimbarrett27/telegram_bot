@@ -14,9 +14,10 @@ from dnd.agent import Agent
 from dnd.tools import DMTools
 from dnd.inventory_tools import InventoryTools
 from dnd.campaign_tools import CampaignTools
+from dnd.memory_tools import MemoryTools
 from dnd.rules_lawyer import create_rules_lawyer
 from dnd.spell_checker import create_spell_checker
-from dnd.database import get_game_by_id, get_recent_events, get_campaign_sections
+from dnd.database import get_game_by_id, get_recent_events, get_campaign_sections, get_dm_notes
 from gcp_util.secrets import get_gemini_api_key
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ the game fun and dramatic. You are an impartial referee — the dice decide outc
 
 ## The Adventure
 {adventure_text}
+
+## Story So Far
+{story_summary}
+
+## DM Notes
+{dm_notes}
 
 ## Current Party
 {party_status}
@@ -48,6 +55,14 @@ caster name and the spell they want to cast.
 is not possible and ask them to try something else. Do NOT resolve invalid actions.
 - If they return CONDITIONAL, proceed with the required check (dice roll).
 - If they return VALID, proceed to resolve the action.
+
+### Memory & Notes
+- The "Story So Far" section above summarizes everything that has happened in the adventure.
+- Your "DM Notes" contain important facts you've recorded. Use read_notes to refresh your memory.
+- Use write_note to record important facts that you'll need later: NPC names and attitudes, \
+plot decisions the players made, items given/received, location descriptions, quest objectives, \
+and anything else you might forget.
+- Write notes AFTER resolving an action, not before. Keep notes concise but specific.
 
 ### Dice Rolls
 - ALWAYS use the roll_dice tool for uncertain outcomes. Never decide success/failure yourself.
@@ -137,6 +152,24 @@ def _build_party_status(game) -> str:
     return "\n".join(lines)
 
 
+def _build_story_summary(game) -> str:
+    """Format the story summary for the system prompt."""
+    if game.story_summary:
+        return game.story_summary
+    return "No summary yet — the adventure is just beginning."
+
+
+def _build_dm_notes(game_id: int) -> str:
+    """Format DM notes for the system prompt."""
+    notes = get_dm_notes(game_id)
+    if not notes:
+        return "No notes recorded yet."
+    lines = []
+    for n in notes:
+        lines.append(f"- {n.content}")
+    return "\n".join(lines)
+
+
 def _build_recent_history(game_id: int, limit: int = 30) -> str:
     """Format recent events for the system prompt."""
     events = get_recent_events(game_id, limit=limit)
@@ -169,6 +202,8 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
 
     system_prompt = DM_SYSTEM_PROMPT_TEMPLATE.format(
         adventure_text=game.adventure_text or "No adventure loaded.",
+        story_summary=_build_story_summary(game),
+        dm_notes=_build_dm_notes(game_id),
         party_status=_build_party_status(game),
         recent_history=_build_recent_history(game_id),
     )
@@ -183,7 +218,13 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
     dm_tools = DMTools(game_id)
     inventory_tools = InventoryTools(game_id)
     campaign_tools = CampaignTools(game_id)
-    all_tools = dm_tools.as_tools() + inventory_tools.as_tools() + campaign_tools.as_tools()
+    memory_tools = MemoryTools(game_id)
+    all_tools = (
+        dm_tools.as_tools()
+        + inventory_tools.as_tools()
+        + campaign_tools.as_tools()
+        + memory_tools.as_tools()
+    )
 
     # Sub-agent tools (rules validation)
     rules_lawyer = create_rules_lawyer(game_id, llm)

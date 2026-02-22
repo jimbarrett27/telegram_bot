@@ -93,6 +93,7 @@ class Game:
     adventure_text: str = ""
     current_player_id: Optional[int] = None
     turn_number: int = 0
+    story_summary: str = ""
     created_at: int = 0
     updated_at: int = 0
     id: Optional[int] = None
@@ -105,6 +106,14 @@ class CampaignSection:
     section_title: str
     section_content: str
     section_order: int = 0
+    created_at: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
+class DmNote:
+    game_id: int
+    content: str
     created_at: int = 0
     id: Optional[int] = None
 

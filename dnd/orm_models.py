@@ -18,6 +18,7 @@ from dnd.models import (
     InventoryItem,
     SpellSlots,
     CampaignSection,
+    DmNote,
     GameStatus,
     CharacterClass,
     EventType,
@@ -40,6 +41,7 @@ class GameORM(Base):
     current_player_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     turn_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    story_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -158,6 +160,21 @@ class CampaignSectionORM(Base):
     )
 
 
+class DmNoteORM(Base):
+    """SQLAlchemy model for dm_notes table."""
+
+    __tablename__ = "dm_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_dm_notes_game_id", "game_id"),
+    )
+
+
 # Conversion functions
 
 
@@ -170,6 +187,7 @@ def game_orm_to_dataclass(orm: GameORM, players: list[Player] | None = None) -> 
         adventure_text=orm.adventure_text or "",
         current_player_id=orm.current_player_id,
         turn_number=orm.turn_number or 0,
+        story_summary=orm.story_summary or "",
         created_at=orm.created_at or 0,
         updated_at=orm.updated_at or 0,
         players=players or [],
@@ -247,6 +265,16 @@ def event_orm_to_dataclass(orm: GameEventORM) -> GameEvent:
         turn_number=orm.turn_number,
         event_type=EventType(orm.event_type),
         actor_player_id=orm.actor_player_id,
+        content=orm.content,
+        created_at=orm.created_at or 0,
+    )
+
+
+def dm_note_orm_to_dataclass(orm: DmNoteORM) -> DmNote:
+    """Convert a DmNoteORM instance to a DmNote dataclass."""
+    return DmNote(
+        id=orm.id,
+        game_id=orm.game_id,
         content=orm.content,
         created_at=orm.created_at or 0,
     )

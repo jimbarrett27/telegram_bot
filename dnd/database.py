@@ -18,6 +18,7 @@ from dnd.models import (
     InventoryItem,
     SpellSlots,
     CampaignSection,
+    DmNote,
     GameStatus,
     CharacterClass,
     EventType,
@@ -30,12 +31,14 @@ from dnd.orm_models import (
     InventoryItemORM,
     SpellSlotsORM,
     CampaignSectionORM,
+    DmNoteORM,
     game_orm_to_dataclass,
     player_orm_to_dataclass,
     event_orm_to_dataclass,
     inventory_orm_to_dataclass,
     spell_slots_orm_to_dataclass,
     campaign_section_orm_to_dataclass,
+    dm_note_orm_to_dataclass,
 )
 
 
@@ -237,6 +240,11 @@ def delete_game(chat_id: int):
         game_orm = session.execute(stmt).scalar_one_or_none()
         if game_orm is None:
             return
+
+        # Delete DM notes
+        dn_stmt = select(DmNoteORM).where(DmNoteORM.game_id == game_orm.id)
+        for dn in session.execute(dn_stmt).scalars().all():
+            session.delete(dn)
 
         # Delete campaign sections
         cs_stmt = select(CampaignSectionORM).where(CampaignSectionORM.game_id == game_orm.id)
@@ -490,3 +498,54 @@ def search_campaign_sections(game_id: int, query: str) -> List[CampaignSection]:
                     or query_lower in orm.section_content.lower()):
                 matches.append(campaign_section_orm_to_dataclass(orm))
         return matches
+
+
+# --- DM note operations ---
+
+
+def add_dm_note(game_id: int, content: str) -> DmNote:
+    """Add a DM note for a game."""
+    now = int(time.time())
+    with get_session() as session:
+        orm = DmNoteORM(
+            game_id=game_id,
+            content=content,
+            created_at=now,
+        )
+        session.add(orm)
+        session.flush()
+        return dm_note_orm_to_dataclass(orm)
+
+
+def get_dm_notes(game_id: int) -> List[DmNote]:
+    """Get all DM notes for a game, ordered by creation time."""
+    with get_session() as session:
+        stmt = (
+            select(DmNoteORM)
+            .where(DmNoteORM.game_id == game_id)
+            .order_by(DmNoteORM.id)
+        )
+        orms = session.execute(stmt).scalars().all()
+        return [dm_note_orm_to_dataclass(orm) for orm in orms]
+
+
+# --- Story summary operations ---
+
+
+def get_story_summary(game_id: int) -> str:
+    """Get the story summary for a game."""
+    with get_session() as session:
+        orm = session.get(GameORM, game_id)
+        if orm is None:
+            return ""
+        return orm.story_summary or ""
+
+
+def update_story_summary(game_id: int, summary: str):
+    """Update the story summary for a game."""
+    now = int(time.time())
+    with get_session() as session:
+        orm = session.get(GameORM, game_id)
+        if orm is not None:
+            orm.story_summary = summary
+            orm.updated_at = now
