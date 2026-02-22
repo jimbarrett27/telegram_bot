@@ -134,6 +134,51 @@ class TestDMToolsRollDice:
         assert "Invalid dice notation" in result
 
 
+class TestDMToolsRollDiceEvents:
+    """Tests that roll_dice records game events."""
+
+    def test_roll_records_event(self, temp_db):
+        from dnd.database import get_recent_events
+
+        game = create_game(chat_id=99996)
+        tools = DMTools(game.id).as_tools()
+        roll_dice = tools[0]
+
+        roll_dice.invoke({"notation": "1d20"})
+
+        events = get_recent_events(game.id)
+        assert len(events) == 1
+        assert events[0].event_type == EventType.SYSTEM
+        assert "Rolled 1d20:" in events[0].content
+
+    def test_invalid_roll_no_event(self, temp_db):
+        from dnd.database import get_recent_events
+
+        game = create_game(chat_id=99995)
+        tools = DMTools(game.id).as_tools()
+        roll_dice = tools[0]
+
+        roll_dice.invoke({"notation": "banana"})
+
+        events = get_recent_events(game.id)
+        assert events == []
+
+    def test_multiple_rolls_multiple_events(self, temp_db):
+        from dnd.database import get_recent_events
+
+        game = create_game(chat_id=99994)
+        tools = DMTools(game.id).as_tools()
+        roll_dice = tools[0]
+
+        roll_dice.invoke({"notation": "1d20"})
+        roll_dice.invoke({"notation": "2d6+3"})
+
+        events = get_recent_events(game.id)
+        assert len(events) == 2
+        assert "1d20" in events[0].content
+        assert "2d6+3" in events[1].content
+
+
 class TestDMToolsGetPartyStatus:
     """Tests for the get_party_status tool function."""
 

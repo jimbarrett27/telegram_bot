@@ -123,6 +123,13 @@ def _invoke_dm(game_id: int, message: str) -> str:
 
 CLARIFICATION_MARKER = "CLARIFICATION_REQUESTED: "
 
+DICE_RETRY_MESSAGE = (
+    "You resolved the previous action without rolling dice. "
+    "You MUST use the roll_dice tool for attack rolls, skill checks, saving throws, "
+    "and damage rolls. Re-resolve this action properly: "
+    "announce the check, call roll_dice, then narrate the result based on the roll."
+)
+
 
 @dataclass
 class DMResponse:
@@ -131,16 +138,30 @@ class DMResponse:
     text: str       # DM's narration or clarification question
 
 
-def _invoke_dm_conversational(game_id: int, message: str) -> DMResponse:
-    """Invoke the DM agent and detect whether it resolved or asked for clarification.
+def _extract_tools_used(messages: list) -> dict[str, int]:
+    """Scan LangGraph message history and count tool invocations by name."""
+    tools = {}
+    for msg in messages:
+        if getattr(msg, "type", None) == "tool":
+            name = getattr(msg, "name", None)
+            if name:
+                tools[name] = tools.get(name, 0) + 1
+    return tools
 
-    Scans tool messages for the request_clarification marker.
+
+def _needs_dice_retry(tools_used: dict[str, int]) -> bool:
+    """Check if the DM applied damage without rolling dice.
+
+    Returns True if apply_damage was called but roll_dice was not,
+    indicating the DM skipped mandatory dice rolls.
     """
-    agent = create_dm_agent(game_id)
-    result = agent.invoke([HumanMessage(content=message)])
-    all_messages = result["messages"]
+    has_damage = tools_used.get("apply_damage", 0) > 0
+    has_dice = tools_used.get("roll_dice", 0) > 0
+    return has_damage and not has_dice
 
-    # Check if request_clarification was called
+
+def _extract_response(all_messages: list) -> tuple[bool, str]:
+    """Extract clarification status and response text from agent messages."""
     clarification_requested = False
     for msg in all_messages:
         if (getattr(msg, "type", None) == "tool"
@@ -148,7 +169,6 @@ def _invoke_dm_conversational(game_id: int, message: str) -> DMResponse:
             clarification_requested = True
             break
 
-    # Extract the final AI text response
     response_text = ""
     for msg in reversed(all_messages):
         if getattr(msg, "type", None) == "ai" and msg.content:
@@ -166,6 +186,35 @@ def _invoke_dm_conversational(game_id: int, message: str) -> DMResponse:
 
     if not response_text:
         response_text = "The Dungeon Master is silent..."
+
+    return clarification_requested, response_text
+
+
+def _invoke_dm_conversational(game_id: int, message: str) -> DMResponse:
+    """Invoke the DM agent and detect whether it resolved or asked for clarification.
+
+    Scans tool messages for the request_clarification marker.
+    If the DM resolved with damage but no dice rolls, retries once with enforcement.
+    """
+    agent = create_dm_agent(game_id)
+    result = agent.invoke([HumanMessage(content=message)])
+    all_messages = result["messages"]
+
+    tools_used = _extract_tools_used(all_messages)
+    clarification_requested, response_text = _extract_response(all_messages)
+
+    # If resolved with damage but no dice, retry once
+    if not clarification_requested and _needs_dice_retry(tools_used):
+        logger.warning(
+            "DM resolved action without dice rolls (game=%d). Retrying with enforcement.",
+            game_id,
+        )
+        retry_agent = create_dm_agent(game_id)
+        retry_msg = f"{message}\n\n{DICE_RETRY_MESSAGE}"
+        retry_result = retry_agent.invoke([HumanMessage(content=retry_msg)])
+        retry_messages = retry_result["messages"]
+
+        clarification_requested, response_text = _extract_response(retry_messages)
 
     return DMResponse(resolved=not clarification_requested, text=response_text)
 

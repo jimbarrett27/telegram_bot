@@ -9,7 +9,7 @@
 ## To Do
 - [x] **#1 Fix command auto-send behaviour** — `/dnd_action` (no args) now prompts player to type action as plain text. Done as part of #2.
 - [x] **#2 Conversational action resolution (DM dialogue)** — ConversationHandler with `request_clarification` tool. DM can ask questions before resolving. Player responds via plain text. Max 25 exchanges. `/dnd_cancel` to abort.
-- [ ] **#3 Dice rolling / randomness system** — `roll_dice` tool exists, DM system prompt instructs use. May need further enforcement/testing.
+- [x] **#3 Dice rolling / randomness system** — Dice rolls recorded as SYSTEM events for transparency. Post-resolution validation detects if DM applied damage without rolling dice and retries with enforcement message. Strengthened system prompt with mandatory dice rolling rules.
 - [ ] **#7 Game grid / spatial tracking** — Background grid/map for tracking positions of characters, monsters, terrain, distances.
 - [x] **#8 PDF campaign loading** — pymupdf PDF parser extracts text and splits into sections by heading detection. Sections stored in campaign_sections DB table. DM agent has lookup_campaign and list_campaign_sections tools. `/dnd_start [adventure_name]` loads a PDF adventure.
 - [x] **#10 Auto-play & AI characters** — 24-hour turn timeout using job_queue (check_turn_timeouts every 5 min). AI player agent (Gemini Flash) generates in-character actions based on class, inventory, and situation. `/dnd_add_ai <name> <class>` adds AI companions during recruitment. AI turns chain automatically with 5-second delays. DM clarification handled with max 3 exchanges. Min party size lowered to 1.

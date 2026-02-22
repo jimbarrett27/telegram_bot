@@ -85,11 +85,23 @@ class DMTools:
                 return str(e)
 
             if modifier > 0:
-                return f"Rolled {notation}: {rolls} + {modifier} = {total}"
+                result = f"Rolled {notation}: {rolls} + {modifier} = {total}"
             elif modifier < 0:
-                return f"Rolled {notation}: {rolls} - {abs(modifier)} = {total}"
+                result = f"Rolled {notation}: {rolls} - {abs(modifier)} = {total}"
             else:
-                return f"Rolled {notation}: {rolls} = {total}"
+                result = f"Rolled {notation}: {rolls} = {total}"
+
+            # Record the roll as a game event for transparency
+            game = get_game_by_id(game_id)
+            if game is not None:
+                add_event(
+                    game_id=game_id,
+                    turn_number=game.turn_number,
+                    event_type=EventType.SYSTEM,
+                    content=result,
+                )
+
+            return result
 
         @tool
         def get_party_status() -> str:
