@@ -65,6 +65,7 @@ class PlayerORM(Base):
     intelligence: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     wisdom: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     charisma: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    is_ai: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     joined_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (
@@ -212,6 +213,7 @@ def player_orm_to_dataclass(orm: PlayerORM) -> Player:
         intelligence=orm.intelligence,
         wisdom=orm.wisdom,
         charisma=orm.charisma,
+        is_ai=bool(orm.is_ai),
         joined_at=orm.joined_at or 0,
     )
 

@@ -108,6 +108,7 @@ def add_player(
     intelligence: int = 10,
     wisdom: int = 10,
     charisma: int = 10,
+    is_ai: bool = False,
 ) -> Player:
     """Add a player to a game. Returns the created Player."""
     now = int(time.time())
@@ -127,6 +128,7 @@ def add_player(
             intelligence=intelligence,
             wisdom=wisdom,
             charisma=charisma,
+            is_ai=int(is_ai),
             joined_at=now,
         )
         session.add(orm)
@@ -549,3 +551,32 @@ def update_story_summary(game_id: int, summary: str):
         if orm is not None:
             orm.story_summary = summary
             orm.updated_at = now
+
+
+# --- Turn timeout operations ---
+
+
+def get_stale_active_games(timeout_seconds: int = 86400) -> List[Game]:
+    """Find active games where the current turn has been idle too long.
+
+    Args:
+        timeout_seconds: How many seconds of inactivity before a turn is stale.
+            Defaults to 86400 (24 hours).
+
+    Returns:
+        List of Game objects (with players) that have timed out.
+    """
+    cutoff = int(time.time()) - timeout_seconds
+    with get_session() as session:
+        stmt = select(GameORM).where(
+            GameORM.status == GameStatus.ACTIVE.value,
+            GameORM.updated_at <= cutoff,
+        )
+        game_orms = session.execute(stmt).scalars().all()
+        results = []
+        for game_orm in game_orms:
+            player_stmt = select(PlayerORM).where(PlayerORM.game_id == game_orm.id)
+            player_orms = session.execute(player_stmt).scalars().all()
+            players = [player_orm_to_dataclass(p) for p in player_orms]
+            results.append(game_orm_to_dataclass(game_orm, players))
+        return results

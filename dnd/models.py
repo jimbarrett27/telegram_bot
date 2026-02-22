@@ -45,6 +45,7 @@ class Player:
     intelligence: int = 10
     wisdom: int = 10
     charisma: int = 10
+    is_ai: bool = False
     joined_at: int = 0
     id: Optional[int] = None
 

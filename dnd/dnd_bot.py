@@ -37,6 +37,7 @@ from dnd.game_logic import (
     finalize_action,
 )
 from dnd.pdf_parser import list_available_adventures
+from dnd.ai_player import auto_play_turn
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
@@ -66,9 +67,10 @@ async def dnd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "A new D&D adventure has been created! "
         "Players can join with /dnd_join <name> <class>\n"
+        "Add AI companions with /dnd_add_ai <name> <class>\n"
         f"Available classes: {', '.join(VALID_CLASSES)}"
         f"{adventure_line}\n"
-        "Start the adventure with /dnd_start [adventure_name] (needs 2-4 players)."
+        "Start the adventure with /dnd_start [adventure_name] (needs at least 1 player)."
     )
 
 
@@ -149,6 +151,82 @@ async def dnd_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def dnd_add_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add an AI-controlled character to the party."""
+    chat_id = update.effective_chat.id
+
+    game = get_game_by_chat(chat_id)
+    if game is None:
+        await update.message.reply_text("No game in this chat. Use /dnd_new to create one.")
+        return
+
+    if game.status != GameStatus.RECRUITING:
+        await update.message.reply_text("The game has already started. Can't add players now.")
+        return
+
+    if len(game.players) >= 4:
+        await update.message.reply_text("The party is full (4/4 players).")
+        return
+
+    args = context.args
+    if not args or len(args) < 2:
+        await update.message.reply_text(
+            "Usage: /dnd_add_ai <character_name> <class>\n"
+            f"Available classes: {', '.join(VALID_CLASSES)}"
+        )
+        return
+
+    character_name = args[0]
+    class_str = args[1].lower()
+
+    if class_str not in VALID_CLASSES:
+        await update.message.reply_text(
+            f"Invalid class '{class_str}'. Available: {', '.join(VALID_CLASSES)}"
+        )
+        return
+
+    character_class = CharacterClass(class_str)
+    template = get_template(character_class)
+    attrs = template["attributes"]
+
+    # Use a placeholder telegram_user_id for AI players (negative to avoid conflicts)
+    import time
+    ai_user_id = -(int(time.time()) % 1_000_000_000)
+
+    player = add_player(
+        game_id=game.id,
+        telegram_user_id=ai_user_id,
+        telegram_username=f"AI_{character_name}",
+        character_name=character_name,
+        character_class=character_class,
+        hp=template["hp"],
+        max_hp=template["max_hp"],
+        is_ai=True,
+        **attrs,
+    )
+
+    # Set up starting inventory
+    for item in template["starting_inventory"]:
+        add_inventory_item(
+            player_id=player.id,
+            game_id=game.id,
+            item_name=item["item_name"],
+            item_type=item["item_type"],
+            quantity=item["quantity"],
+            equipped=item.get("equipped", False),
+        )
+
+    # Set up spell slots
+    if template["spell_slots"]:
+        create_spell_slots(player_id=player.id, **template["spell_slots"])
+
+    player_count = len(game.players) + 1
+    await update.message.reply_text(
+        f"{character_name} the {class_str.title()} [AI] has joined the party! "
+        f"({player_count}/4 players)"
+    )
+
+
 async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start the adventure."""
     chat_id = update.effective_chat.id
@@ -162,10 +240,10 @@ async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("The game has already started.")
         return
 
-    if len(game.players) < 2:
+    if len(game.players) < 1:
         await update.message.reply_text(
-            f"Need at least 2 players to start (currently {len(game.players)}). "
-            "Use /dnd_join to add more."
+            "Need at least 1 player to start. "
+            "Use /dnd_join or /dnd_add_ai to add players."
         )
         return
 
@@ -183,10 +261,17 @@ async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         narration, first_player = await asyncio.to_thread(start_game, game, adventure_name)
         await update.message.reply_text(narration)
-        await update.message.reply_text(
-            f"@{first_player.telegram_username}, it's your turn! "
-            "Use /dnd_action to take your action."
-        )
+
+        if first_player.is_ai:
+            # AI player goes first — auto-play after a short delay
+            game = get_game_by_chat(chat_id)
+            await asyncio.sleep(3)
+            await auto_play_turn(game.id, chat_id, context.bot)
+        else:
+            await update.message.reply_text(
+                f"@{first_player.telegram_username}, it's your turn! "
+                "Use /dnd_action to take your action."
+            )
     except FileNotFoundError as e:
         await update.message.reply_text(str(e))
     except Exception as e:
@@ -228,10 +313,19 @@ async def _send_resolution(
         )
         await update.message.reply_text(resolution)
         await update.message.reply_text(scene)
-        await update.message.reply_text(
-            f"@{next_player.telegram_username}, it's your turn! "
-            "Use /dnd_action to take your action."
-        )
+
+        if next_player.is_ai:
+            # AI player is next — auto-play after a short delay
+            game = get_game_by_chat(update.effective_chat.id)
+            _cleanup_chat_data(context)
+            await asyncio.sleep(5)
+            await auto_play_turn(game.id, update.effective_chat.id, context.bot)
+            return ConversationHandler.END
+        else:
+            await update.message.reply_text(
+                f"@{next_player.telegram_username}, it's your turn! "
+                "Use /dnd_action to take your action."
+            )
     except Exception as e:
         logger.error(f"Error finalizing action: {e}")
         await update.message.reply_text(f"Error: {e}")
@@ -466,9 +560,10 @@ async def dnd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             marker = ""
             if game.status == GameStatus.ACTIVE and p.id == game.current_player_id:
                 marker = " <-- active"
+            ai_tag = " [AI]" if p.is_ai else ""
             lines.append(
                 f"  {p.character_name} ({p.character_class.value.title()}) "
-                f"HP: {p.hp}/{p.max_hp} @{p.telegram_username}{marker}"
+                f"HP: {p.hp}/{p.max_hp} @{p.telegram_username}{ai_tag}{marker}"
             )
     else:
         lines.append("\nNo players yet. Use /dnd_join to join!")
@@ -518,6 +613,7 @@ def get_handlers() -> list:
     return [
         CommandHandler("dnd_new", dnd_new),
         CommandHandler("dnd_join", dnd_join),
+        CommandHandler("dnd_add_ai", dnd_add_ai),
         CommandHandler("dnd_start", dnd_start),
         action_conversation,
         CommandHandler("dnd_sheet", dnd_sheet),

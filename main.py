@@ -223,9 +223,11 @@ def main():
     # Schedule periodic tasks (minecraft logs, daily scans) - run every 60 seconds
     if app.job_queue:
         from datetime import time as dt_time
+        from dnd.turn_timer import check_turn_timeouts
         app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
         app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
         app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
+        app.job_queue.run_repeating(check_turn_timeouts, interval=300, first=60)
     else:
         logger.warning("JobQueue not available - periodic tasks disabled. Install with: pip install 'python-telegram-bot[job-queue]'")
 
