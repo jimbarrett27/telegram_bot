@@ -17,6 +17,7 @@ from dnd.models import (
     GameEvent,
     InventoryItem,
     SpellSlots,
+    CampaignSection,
     GameStatus,
     CharacterClass,
     EventType,
@@ -28,11 +29,13 @@ from dnd.orm_models import (
     GameEventORM,
     InventoryItemORM,
     SpellSlotsORM,
+    CampaignSectionORM,
     game_orm_to_dataclass,
     player_orm_to_dataclass,
     event_orm_to_dataclass,
     inventory_orm_to_dataclass,
     spell_slots_orm_to_dataclass,
+    campaign_section_orm_to_dataclass,
 )
 
 
@@ -235,6 +238,11 @@ def delete_game(chat_id: int):
         if game_orm is None:
             return
 
+        # Delete campaign sections
+        cs_stmt = select(CampaignSectionORM).where(CampaignSectionORM.game_id == game_orm.id)
+        for cs in session.execute(cs_stmt).scalars().all():
+            session.delete(cs)
+
         # Delete inventory items
         inv_stmt = select(InventoryItemORM).where(InventoryItemORM.game_id == game_orm.id)
         for item in session.execute(inv_stmt).scalars().all():
@@ -419,3 +427,66 @@ def update_player_attributes(player_id: int, **attrs):
         for attr, value in attrs.items():
             if attr in valid_attrs:
                 setattr(orm, attr, value)
+
+
+# --- Campaign section operations ---
+
+
+def store_campaign_sections(game_id: int, sections: list[dict]) -> list[CampaignSection]:
+    """Store parsed campaign sections for a game.
+
+    Args:
+        game_id: The game ID.
+        sections: List of {"title": str, "content": str} dicts.
+
+    Returns:
+        List of created CampaignSection dataclasses.
+    """
+    now = int(time.time())
+    results = []
+    with get_session() as session:
+        for i, section in enumerate(sections):
+            orm = CampaignSectionORM(
+                game_id=game_id,
+                section_title=section["title"],
+                section_content=section["content"],
+                section_order=i,
+                created_at=now,
+            )
+            session.add(orm)
+            session.flush()
+            results.append(campaign_section_orm_to_dataclass(orm))
+    return results
+
+
+def get_campaign_sections(game_id: int) -> List[CampaignSection]:
+    """Get all campaign sections for a game, ordered by section_order."""
+    with get_session() as session:
+        stmt = (
+            select(CampaignSectionORM)
+            .where(CampaignSectionORM.game_id == game_id)
+            .order_by(CampaignSectionORM.section_order)
+        )
+        orms = session.execute(stmt).scalars().all()
+        return [campaign_section_orm_to_dataclass(orm) for orm in orms]
+
+
+def search_campaign_sections(game_id: int, query: str) -> List[CampaignSection]:
+    """Search campaign sections by keyword in title or content.
+
+    Returns matching sections ordered by section_order.
+    """
+    query_lower = query.lower()
+    with get_session() as session:
+        stmt = (
+            select(CampaignSectionORM)
+            .where(CampaignSectionORM.game_id == game_id)
+            .order_by(CampaignSectionORM.section_order)
+        )
+        orms = session.execute(stmt).scalars().all()
+        matches = []
+        for orm in orms:
+            if (query_lower in orm.section_title.lower()
+                    or query_lower in orm.section_content.lower()):
+                matches.append(campaign_section_orm_to_dataclass(orm))
+        return matches

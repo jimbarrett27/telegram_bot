@@ -17,6 +17,7 @@ from dnd.models import (
     GameEvent,
     InventoryItem,
     SpellSlots,
+    CampaignSection,
     GameStatus,
     CharacterClass,
     EventType,
@@ -140,6 +141,23 @@ class GameEventORM(Base):
     )
 
 
+class CampaignSectionORM(Base):
+    """SQLAlchemy model for campaign_sections table."""
+
+    __tablename__ = "campaign_sections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    section_title: Mapped[str] = mapped_column(Text, nullable=False)
+    section_content: Mapped[str] = mapped_column(Text, nullable=False)
+    section_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_campaign_sections_game_id", "game_id"),
+    )
+
+
 # Conversion functions
 
 
@@ -230,5 +248,17 @@ def event_orm_to_dataclass(orm: GameEventORM) -> GameEvent:
         event_type=EventType(orm.event_type),
         actor_player_id=orm.actor_player_id,
         content=orm.content,
+        created_at=orm.created_at or 0,
+    )
+
+
+def campaign_section_orm_to_dataclass(orm: CampaignSectionORM) -> CampaignSection:
+    """Convert a CampaignSectionORM instance to a CampaignSection dataclass."""
+    return CampaignSection(
+        id=orm.id,
+        game_id=orm.game_id,
+        section_title=orm.section_title,
+        section_content=orm.section_content,
+        section_order=orm.section_order,
         created_at=orm.created_at or 0,
     )

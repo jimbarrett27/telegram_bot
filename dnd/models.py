@@ -25,6 +25,8 @@ class EventType(Enum):
     PLAYER_ACTION = "player_action"
     RESOLUTION = "resolution"
     SYSTEM = "system"
+    DM_CLARIFICATION = "dm_clarification"
+    PLAYER_CLARIFICATION = "player_clarification"
 
 
 @dataclass
@@ -95,6 +97,16 @@ class Game:
     updated_at: int = 0
     id: Optional[int] = None
     players: List[Player] = field(default_factory=list)
+
+
+@dataclass
+class CampaignSection:
+    game_id: int
+    section_title: str
+    section_content: str
+    section_order: int = 0
+    created_at: int = 0
+    id: Optional[int] = None
 
 
 @dataclass
