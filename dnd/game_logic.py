@@ -1,11 +1,12 @@
 """
 Game logic for the D&D async game system.
 
-Handles turn management, LLM context building, and narration/resolution calls.
+Handles turn management and delegates narration/resolution to the DM agent.
 """
 
-import json
 from typing import Optional
+
+from langchain_core.messages import HumanMessage
 
 from dnd.models import Game, Player, GameEvent, EventType, GameStatus
 from dnd.database import (
@@ -14,17 +15,14 @@ from dnd.database import (
     update_game_current_player,
     update_game_status,
     update_game_adventure,
-    update_player_hp,
     add_event,
-    get_player_by_id,
 )
-from llm.llm_util import get_llm_response
+from dnd.dm_agent import create_dm_agent
 from util.constants import REPO_ROOT
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
 
-PROMPTS_DIR = REPO_ROOT / "dnd/prompts"
 ADVENTURES_DIR = REPO_ROOT / "dnd/adventures"
 
 
@@ -74,46 +72,25 @@ def advance_turn(game: Game) -> Player:
     return next_player
 
 
-def _build_player_dicts(players: list[Player]) -> list[dict]:
-    """Build player info dicts for prompt templates."""
-    return [
-        {
-            "character_name": p.character_name,
-            "character_class": p.character_class.value,
-            "hp": p.hp,
-            "max_hp": p.max_hp,
-            "telegram_username": p.telegram_username,
-        }
-        for p in players
-    ]
-
-
-def _build_event_dicts(events: list[GameEvent]) -> list[dict]:
-    """Build event info dicts for prompt templates."""
-    return [
-        {
-            "event_type": e.event_type.value,
-            "content": e.content,
-        }
-        for e in events
-    ]
+def _invoke_dm(game_id: int, message: str) -> str:
+    """Create a DM agent and invoke it with a message. Returns the response text."""
+    agent = create_dm_agent(game_id)
+    return agent.get_response_text([HumanMessage(content=message)])
 
 
 def generate_intro(game: Game, active_player: Player) -> str:
-    """Generate the adventure intro narration using LLM."""
-    template_path = str(PROMPTS_DIR / "generate_adventure_intro.jinja2")
-    params = {
-        "adventure_text": game.adventure_text,
-        "players": _build_player_dicts(game.players),
-        "active_player": {
-            "character_name": active_player.character_name,
-            "telegram_username": active_player.telegram_username,
-        },
-    }
+    """Generate the adventure intro narration using the DM agent."""
+    message = (
+        f"Generate an exciting opening narration for this adventure. "
+        f"The party has just arrived at the adventure location. "
+        f"Set the scene and atmosphere in 2-3 paragraphs. "
+        f"The first player to act is {active_player.character_name} "
+        f"(@{active_player.telegram_username}). "
+        f"End by prompting them to decide their first action."
+    )
 
-    narration = get_llm_response(template_path, params)
+    narration = _invoke_dm(game.id, message)
 
-    # Record the narration as an event
     add_event(
         game_id=game.id,
         turn_number=game.turn_number,
@@ -126,19 +103,14 @@ def generate_intro(game: Game, active_player: Player) -> str:
 
 def narrate_scene(game: Game, active_player: Player) -> str:
     """Generate scene narration for the active player's turn."""
-    events = get_recent_events(game.id, limit=30)
-    template_path = str(PROMPTS_DIR / "narrate_scene.jinja2")
-    params = {
-        "adventure_text": game.adventure_text,
-        "players": _build_player_dicts(game.players),
-        "events": _build_event_dicts(events),
-        "active_player": {
-            "character_name": active_player.character_name,
-            "telegram_username": active_player.telegram_username,
-        },
-    }
+    message = (
+        f"It is now {active_player.character_name}'s turn "
+        f"(@{active_player.telegram_username}). "
+        f"Narrate the current scene briefly (1-2 paragraphs) based on what just happened, "
+        f"and prompt them to decide their action."
+    )
 
-    narration = get_llm_response(template_path, params)
+    narration = _invoke_dm(game.id, message)
 
     add_event(
         game_id=game.id,
@@ -151,7 +123,12 @@ def narrate_scene(game: Game, active_player: Player) -> str:
 
 
 def resolve_action(game: Game, active_player: Player, action_text: str) -> str:
-    """Resolve a player's action using LLM. Returns the narration text."""
+    """Resolve a player's action using the DM agent. Returns the narration text.
+
+    The agent will use its tools (roll_dice, apply_damage, etc.) during
+    the ReAct loop to determine outcomes. HP changes are applied via the
+    apply_damage tool, not via JSON parsing.
+    """
     # Record the player's action
     add_event(
         game_id=game.id,
@@ -161,46 +138,15 @@ def resolve_action(game: Game, active_player: Player, action_text: str) -> str:
         actor_player_id=active_player.id,
     )
 
-    events = get_recent_events(game.id, limit=30)
-    template_path = str(PROMPTS_DIR / "resolve_action.jinja2")
-    params = {
-        "adventure_text": game.adventure_text,
-        "players": _build_player_dicts(game.players),
-        "events": _build_event_dicts(events),
-        "active_player": {
-            "character_name": active_player.character_name,
-            "character_class": active_player.character_class.value,
-            "telegram_username": active_player.telegram_username,
-        },
-        "action_text": action_text,
-    }
+    message = (
+        f"{active_player.character_name} ({active_player.character_class.value.title()}) "
+        f"attempts: \"{action_text}\"\n\n"
+        f"Resolve this action. Use roll_dice for any checks or attack rolls. "
+        f"Use apply_damage if anyone takes damage or receives healing. "
+        f"Then narrate the outcome."
+    )
 
-    response = get_llm_response(template_path, params)
-
-    # Parse JSON response
-    try:
-        clean = response.replace("```json", "").replace("```", "").strip()
-        result = json.loads(clean)
-    except json.JSONDecodeError:
-        logger.error(f"Failed to parse LLM response as JSON: {response}")
-        # Treat the whole response as narration with no HP changes
-        result = {"narration": response, "hp_changes": []}
-
-    narration = result.get("narration", response)
-    hp_changes = result.get("hp_changes", [])
-
-    # Apply HP changes
-    for change in hp_changes:
-        player_name = change.get("player_name")
-        delta = change.get("change", 0)
-        if not player_name or delta == 0:
-            continue
-
-        for p in game.players:
-            if p.character_name == player_name:
-                new_hp = max(0, min(p.max_hp, p.hp + delta))
-                update_player_hp(p.id, new_hp)
-                break
+    narration = _invoke_dm(game.id, message)
 
     # Record the resolution
     add_event(

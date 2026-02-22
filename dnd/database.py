@@ -53,6 +53,20 @@ def create_game(chat_id: int) -> Game:
         return game_orm_to_dataclass(orm)
 
 
+def get_game_by_id(game_id: int) -> Optional[Game]:
+    """Get a game by its ID, including its players."""
+    with get_session() as session:
+        game_orm = session.get(GameORM, game_id)
+        if game_orm is None:
+            return None
+
+        player_stmt = select(PlayerORM).where(PlayerORM.game_id == game_orm.id)
+        player_orms = session.execute(player_stmt).scalars().all()
+        players = [player_orm_to_dataclass(p) for p in player_orms]
+
+        return game_orm_to_dataclass(game_orm, players)
+
+
 def get_game_by_chat(chat_id: int) -> Optional[Game]:
     """Get a game by chat ID, including its players."""
     with get_session() as session:

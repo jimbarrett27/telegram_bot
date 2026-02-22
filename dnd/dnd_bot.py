@@ -2,6 +2,8 @@
 Telegram command handlers for the D&D async game system.
 """
 
+import asyncio
+
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
@@ -125,7 +127,7 @@ async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("The adventure begins! Generating the opening scene...")
 
     try:
-        narration, first_player = start_game(game)
+        narration, first_player = await asyncio.to_thread(start_game, game)
         await update.message.reply_text(narration)
         await update.message.reply_text(
             f"@{first_player.telegram_username}, it's your turn! "
@@ -176,7 +178,9 @@ async def dnd_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("Resolving your action...")
 
     try:
-        resolution, scene, next_player = process_action(game, player, action_text)
+        resolution, scene, next_player = await asyncio.to_thread(
+            process_action, game, player, action_text
+        )
 
         await update.message.reply_text(resolution)
         await update.message.reply_text(scene)
