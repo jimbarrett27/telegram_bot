@@ -272,3 +272,19 @@ class TestDMToolsGetRecentHistory:
         assert "goblins attack" in result
         assert "PLAYER_ACTION" in result
         assert "swings his sword" in result
+
+
+class TestRequestClarification:
+    """Tests for the request_clarification tool function."""
+
+    def test_returns_marker(self, game_with_players):
+        tools = DMTools(game_with_players.id).as_tools()
+        request_clarification = tools[4]
+
+        result = request_clarification.invoke({"question": "Which goblin?"})
+        assert "CLARIFICATION_REQUESTED: Which goblin?" in result
+
+    def test_tool_exists_in_list(self, game_with_players):
+        tools = DMTools(game_with_players.id).as_tools()
+        tool_names = [t.name for t in tools]
+        assert "request_clarification" in tool_names

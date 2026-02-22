@@ -4,6 +4,7 @@ Game logic for the D&D async game system.
 Handles turn management and delegates narration/resolution to the DM agent.
 """
 
+from dataclasses import dataclass
 from typing import Optional
 
 from langchain_core.messages import HumanMessage
@@ -15,15 +16,19 @@ from dnd.database import (
     update_game_current_player,
     update_game_status,
     update_game_adventure,
+    store_campaign_sections,
     add_event,
 )
 from dnd.dm_agent import create_dm_agent
-from util.constants import REPO_ROOT
+from dnd.pdf_parser import (
+    parse_adventure_pdf,
+    get_adventure_path,
+    list_available_adventures,
+    ADVENTURES_DIR,
+)
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
-
-ADVENTURES_DIR = REPO_ROOT / "dnd/adventures"
 
 
 def get_adventure_text() -> str:
@@ -31,6 +36,43 @@ def get_adventure_text() -> str:
     path = ADVENTURES_DIR / "placeholder.txt"
     with open(path, "r") as f:
         return f.read()
+
+
+def load_adventure(game_id: int, adventure_name: str) -> str:
+    """Parse an adventure PDF and store sections in the database.
+
+    Args:
+        game_id: The game ID to associate sections with.
+        adventure_name: Name of the adventure (matched against PDF filenames).
+
+    Returns:
+        A summary/overview string for the system prompt.
+
+    Raises:
+        FileNotFoundError: If no matching adventure PDF is found.
+    """
+    pdf_path = get_adventure_path(adventure_name)
+    if pdf_path is None:
+        available = list_available_adventures()
+        raise FileNotFoundError(
+            f"Adventure '{adventure_name}' not found. "
+            f"Available: {', '.join(available) or 'none'}"
+        )
+
+    sections = parse_adventure_pdf(pdf_path)
+    store_campaign_sections(game_id, sections)
+
+    # Build a summary from the first few sections for the system prompt
+    summary_parts = []
+    for section in sections[:4]:
+        summary_parts.append(f"## {section['title']}\n{section['content']}")
+
+    summary = (
+        f"Adventure: {pdf_path.stem}\n\n"
+        + "\n\n".join(summary_parts)
+        + "\n\n(Use the lookup_campaign tool to access more adventure details.)"
+    )
+    return summary
 
 
 def get_active_player(game: Game) -> Optional[Player]:
@@ -76,6 +118,128 @@ def _invoke_dm(game_id: int, message: str) -> str:
     """Create a DM agent and invoke it with a message. Returns the response text."""
     agent = create_dm_agent(game_id)
     return agent.get_response_text([HumanMessage(content=message)])
+
+
+CLARIFICATION_MARKER = "CLARIFICATION_REQUESTED: "
+
+
+@dataclass
+class DMResponse:
+    """Result of a DM agent invocation."""
+    resolved: bool  # True = action resolved, False = clarification requested
+    text: str       # DM's narration or clarification question
+
+
+def _invoke_dm_conversational(game_id: int, message: str) -> DMResponse:
+    """Invoke the DM agent and detect whether it resolved or asked for clarification.
+
+    Scans tool messages for the request_clarification marker.
+    """
+    agent = create_dm_agent(game_id)
+    result = agent.invoke([HumanMessage(content=message)])
+    all_messages = result["messages"]
+
+    # Check if request_clarification was called
+    clarification_requested = False
+    for msg in all_messages:
+        if (getattr(msg, "type", None) == "tool"
+                and getattr(msg, "name", None) == "request_clarification"):
+            clarification_requested = True
+            break
+
+    # Extract the final AI text response
+    response_text = ""
+    for msg in reversed(all_messages):
+        if getattr(msg, "type", None) == "ai" and msg.content:
+            content = msg.content
+            if isinstance(content, list):
+                text_parts = [
+                    part.get("text", "")
+                    for part in content
+                    if isinstance(part, dict) and "text" in part
+                ]
+                response_text = "".join(text_parts)
+            else:
+                response_text = content
+            break
+
+    if not response_text:
+        response_text = "The Dungeon Master is silent..."
+
+    return DMResponse(resolved=not clarification_requested, text=response_text)
+
+
+def start_player_action(game: Game, player: Player, action_text: str) -> DMResponse:
+    """Begin resolving a player's action. Returns DMResponse indicating resolve or clarify."""
+    add_event(
+        game_id=game.id,
+        turn_number=game.turn_number,
+        event_type=EventType.PLAYER_ACTION,
+        content=action_text,
+        actor_player_id=player.id,
+    )
+
+    message = (
+        f"{player.character_name} ({player.character_class.value.title()}) "
+        f"attempts: \"{action_text}\"\n\n"
+        f"Resolve this action. Use roll_dice for any checks or attack rolls. "
+        f"Use apply_damage if anyone takes damage or receives healing. "
+        f"If the action is ambiguous, use request_clarification to ask the player. "
+        f"Otherwise, resolve and narrate the outcome."
+    )
+
+    return _invoke_dm_conversational(game.id, message)
+
+
+def continue_player_action(
+    game: Game,
+    player: Player,
+    response_text: str,
+    exchange_count: int,
+) -> DMResponse:
+    """Continue resolving after player responds to clarification."""
+    add_event(
+        game_id=game.id,
+        turn_number=game.turn_number,
+        event_type=EventType.PLAYER_CLARIFICATION,
+        content=response_text,
+        actor_player_id=player.id,
+    )
+
+    force_resolve = exchange_count >= 25
+    suffix = ""
+    if force_resolve:
+        suffix = (
+            "\n\nIMPORTANT: You have asked enough questions. "
+            "You must resolve this action NOW with the information you have. "
+            "Do not call request_clarification."
+        )
+
+    message = (
+        f"{player.character_name} responds: \"{response_text}\"\n\n"
+        f"Continue resolving this action based on the player's response and "
+        f"the conversation history in your recent events.{suffix}"
+    )
+
+    return _invoke_dm_conversational(game.id, message)
+
+
+def finalize_action(game: Game, player: Player, resolution_text: str) -> tuple[str, str, Player]:
+    """Finalize a resolved action: record event, advance turn, narrate scene."""
+    add_event(
+        game_id=game.id,
+        turn_number=game.turn_number,
+        event_type=EventType.RESOLUTION,
+        content=resolution_text,
+    )
+
+    next_player = advance_turn(game)
+
+    # Reload game for updated state
+    game = get_game_by_chat(game.chat_id)
+    scene = narrate_scene(game, next_player)
+
+    return resolution_text, scene, next_player
 
 
 def generate_intro(game: Game, active_player: Player) -> str:
@@ -159,9 +323,18 @@ def resolve_action(game: Game, active_player: Player, action_text: str) -> str:
     return narration
 
 
-def start_game(game: Game) -> tuple[str, Player]:
-    """Start a game: set adventure, activate, generate intro. Returns (narration, first_player)."""
-    adventure_text = get_adventure_text()
+def start_game(game: Game, adventure_name: str | None = None) -> tuple[str, Player]:
+    """Start a game: set adventure, activate, generate intro. Returns (narration, first_player).
+
+    Args:
+        game: The game to start.
+        adventure_name: Optional adventure PDF name. If provided, parses the PDF
+            and stores sections. If None, falls back to placeholder text.
+    """
+    if adventure_name:
+        adventure_text = load_adventure(game.id, adventure_name)
+    else:
+        adventure_text = get_adventure_text()
     update_game_adventure(game.id, adventure_text)
     update_game_status(game.id, GameStatus.ACTIVE)
     game.adventure_text = adventure_text

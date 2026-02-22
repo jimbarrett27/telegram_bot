@@ -13,9 +13,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from dnd.agent import Agent
 from dnd.tools import DMTools
 from dnd.inventory_tools import InventoryTools
+from dnd.campaign_tools import CampaignTools
 from dnd.rules_lawyer import create_rules_lawyer
 from dnd.spell_checker import create_spell_checker
-from dnd.database import get_game_by_id, get_recent_events
+from dnd.database import get_game_by_id, get_recent_events, get_campaign_sections
 from gcp_util.secrets import get_gemini_api_key
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,12 @@ is not possible and ask them to try something else. Do NOT resolve invalid actio
 - Use remove_item when items are consumed (potions), thrown, or broken.
 - Use equip_item / unequip_item when players change their gear.
 
+### Adventure Content
+- The adventure summary above gives you an overview. For specific details about locations, NPCs, \
+encounters, traps, or items, use the lookup_campaign tool.
+- Use list_campaign_sections to see what sections are available in the adventure.
+- ALWAYS look up the relevant section before narrating a new scene or encounter.
+
 ### Party Status
 - Use get_party_status to check current HP before making decisions.
 - Use get_recent_history if you need to recall what happened earlier.
@@ -81,6 +88,16 @@ is not possible and ask them to try something else. Do NOT resolve invalid actio
 - Keep the tone fun and dramatic — this is an adventure!
 - Describe what the player sees, hears, and feels.
 - End your response with a prompt for what the player wants to do next.
+
+### Clarification
+- If a player's action is ambiguous and the ambiguity would meaningfully change the outcome, \
+use the request_clarification tool to ask them a specific question before resolving.
+- Examples of when to clarify: targeting ambiguity ("which goblin?"), resource choices \
+("spell slot or melee?"), unclear intent ("sneak or charge?").
+- Do NOT ask for clarification on simple, obvious actions. If in doubt, just resolve it.
+- You may only ask one clarification question at a time.
+- When you have enough information (either from the original action or after clarification), \
+resolve the action immediately using your normal tools (roll_dice, apply_damage, etc.).
 
 ### Fairness
 - Consider each character's class when resolving actions:
@@ -93,8 +110,13 @@ is not possible and ask them to try something else. Do NOT resolve invalid actio
 and suggest alternatives.
 
 ### Important
-- You are responding to a single player action. Resolve it completely (including any \
-dice rolls and damage), then narrate the outcome.
+- You may be responding to a player's initial action OR to their answer to a clarification \
+question you previously asked. Check the recent history for DM_CLARIFICATION and \
+PLAYER_CLARIFICATION events to see the conversation so far.
+- If you have enough information, resolve the action completely (including any dice rolls \
+and damage), then narrate the outcome.
+- If the recent history shows you already asked a clarification and the player responded, \
+you should resolve now rather than asking another question on the same topic.
 - Do NOT output JSON. Write natural narration text only.
 - Do NOT mention tool names or mechanics in your narration — describe the story, not the system.
 """
@@ -160,7 +182,8 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
     # Direct tools
     dm_tools = DMTools(game_id)
     inventory_tools = InventoryTools(game_id)
-    all_tools = dm_tools.as_tools() + inventory_tools.as_tools()
+    campaign_tools = CampaignTools(game_id)
+    all_tools = dm_tools.as_tools() + inventory_tools.as_tools() + campaign_tools.as_tools()
 
     # Sub-agent tools (rules validation)
     rules_lawyer = create_rules_lawyer(game_id, llm)

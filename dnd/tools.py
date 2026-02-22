@@ -186,4 +186,23 @@ class DMTools:
                 lines.append(f"[{e.event_type.value.upper()}] {e.content}")
             return "\n".join(lines)
 
-        return [roll_dice, get_party_status, apply_damage, get_recent_history]
+        @tool
+        def request_clarification(question: str) -> str:
+            """Ask the player a clarifying question before resolving their action.
+
+            Use this when the player's stated action is ambiguous and the ambiguity
+            would meaningfully change the outcome. Examples:
+            - "Which goblin do you want to attack - the one by the door or the one on the ledge?"
+            - "Do you want to use a spell slot or try a regular attack?"
+            - "Are you trying to sneak past or create a distraction?"
+
+            Do NOT use this for simple actions that can be resolved directly.
+            Only ask when genuine ambiguity would change the outcome.
+
+            Args:
+                question: The clarifying question to ask the player.
+            """
+            logger.info("request_clarification called: question=%r", question)
+            return f"CLARIFICATION_REQUESTED: {question}"
+
+        return [roll_dice, get_party_status, apply_damage, get_recent_history, request_clarification]
