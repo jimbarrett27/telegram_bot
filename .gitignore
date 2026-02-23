@@ -2,3 +2,5 @@
 build/
 *.db
 instructions.md
+.hypothesis/
+dnd/adventures/
