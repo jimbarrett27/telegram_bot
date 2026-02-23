@@ -36,7 +36,7 @@ from dnd.game_logic import (
     continue_player_action,
     finalize_action,
 )
-from dnd.pdf_parser import list_available_adventures
+from dnd.campaign_loader import list_available_campaigns
 from dnd.ai_player import auto_play_turn
 from util.logging_util import setup_logger
 
@@ -59,7 +59,7 @@ async def dnd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     game = create_game(chat_id)
 
-    adventures = list_available_adventures()
+    adventures = list_available_campaigns()
     adventure_line = ""
     if adventures:
         adventure_line = f"\nAvailable adventures: {', '.join(adventures)}\n"
@@ -255,7 +255,7 @@ async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if adventure_name:
         loading_msg += f" Loading '{adventure_name}'..."
     else:
-        loading_msg += " Generating the opening scene..."
+        loading_msg += " Loading campaign..."
     await update.message.reply_text(loading_msg)
 
     try:

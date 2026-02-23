@@ -21,59 +21,10 @@ from dnd.database import (
 )
 from dnd.dm_agent import create_dm_agent
 from dnd.summarizer import summarize_events
-from dnd.pdf_parser import (
-    parse_adventure_pdf,
-    get_adventure_path,
-    list_available_adventures,
-    ADVENTURES_DIR,
-)
+from dnd.campaign_loader import load_campaign, list_available_campaigns
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
-
-
-def get_adventure_text() -> str:
-    """Load the placeholder adventure text."""
-    path = ADVENTURES_DIR / "placeholder.txt"
-    with open(path, "r") as f:
-        return f.read()
-
-
-def load_adventure(game_id: int, adventure_name: str) -> str:
-    """Parse an adventure PDF and store sections in the database.
-
-    Args:
-        game_id: The game ID to associate sections with.
-        adventure_name: Name of the adventure (matched against PDF filenames).
-
-    Returns:
-        A summary/overview string for the system prompt.
-
-    Raises:
-        FileNotFoundError: If no matching adventure PDF is found.
-    """
-    pdf_path = get_adventure_path(adventure_name)
-    if pdf_path is None:
-        available = list_available_adventures()
-        raise FileNotFoundError(
-            f"Adventure '{adventure_name}' not found. "
-            f"Available: {', '.join(available) or 'none'}"
-        )
-
-    sections = parse_adventure_pdf(pdf_path)
-    store_campaign_sections(game_id, sections)
-
-    # Build a summary from the first few sections for the system prompt
-    summary_parts = []
-    for section in sections[:4]:
-        summary_parts.append(f"## {section['title']}\n{section['content']}")
-
-    summary = (
-        f"Adventure: {pdf_path.stem}\n\n"
-        + "\n\n".join(summary_parts)
-        + "\n\n(Use the lookup_campaign tool to access more adventure details.)"
-    )
-    return summary
 
 
 def get_active_player(game: Game) -> Optional[Player]:
@@ -384,13 +335,10 @@ def start_game(game: Game, adventure_name: str | None = None) -> tuple[str, Play
 
     Args:
         game: The game to start.
-        adventure_name: Optional adventure PDF name. If provided, parses the PDF
-            and stores sections. If None, falls back to placeholder text.
+        adventure_name: Optional campaign name. If None, defaults to 'goblin_caves'.
     """
-    if adventure_name:
-        adventure_text = load_adventure(game.id, adventure_name)
-    else:
-        adventure_text = get_adventure_text()
+    campaign = adventure_name or "goblin_caves"
+    adventure_text = load_campaign(game.id, campaign)
     update_game_adventure(game.id, adventure_text)
     update_game_status(game.id, GameStatus.ACTIVE)
     game.adventure_text = adventure_text
