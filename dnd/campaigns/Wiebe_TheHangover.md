@@ -1,0 +1,1 @@
+There are no maps or visual elements described in the provided text that would need interpretation or special formatting. The text mentions preparing generic forest maps and a map of the outskirts of a small town, but these are instructions for the DM and not content to be included in the formatted adventure.
