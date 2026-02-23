@@ -120,6 +120,33 @@ class DmNote:
 
 
 @dataclass
+class Zone:
+    game_id: int
+    name: str
+    description: str = ""
+    created_at: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
+class ZoneAdjacency:
+    zone_a_id: int
+    zone_b_id: int
+    id: Optional[int] = None
+
+
+@dataclass
+class ZoneEntity:
+    zone_id: int
+    game_id: int
+    name: str
+    player_id: Optional[int] = None
+    entity_type: str = "npc"
+    created_at: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
 class GameEvent:
     game_id: int
     turn_number: int

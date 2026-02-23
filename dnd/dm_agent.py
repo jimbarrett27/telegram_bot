@@ -15,9 +15,18 @@ from dnd.tools import DMTools
 from dnd.inventory_tools import InventoryTools
 from dnd.campaign_tools import CampaignTools
 from dnd.memory_tools import MemoryTools
+from dnd.zone_tools import ZoneTools
 from dnd.rules_lawyer import create_rules_lawyer
 from dnd.spell_checker import create_spell_checker
-from dnd.database import get_game_by_id, get_recent_events, get_campaign_sections, get_dm_notes
+from dnd.database import (
+    get_game_by_id,
+    get_recent_events,
+    get_campaign_sections,
+    get_dm_notes,
+    get_zones,
+    get_zone_occupants,
+    get_adjacent_zones,
+)
 from gcp_util.secrets import get_gemini_api_key
 
 logger = logging.getLogger(__name__)
@@ -40,6 +49,9 @@ the game fun and dramatic. You are an impartial referee — the dice decide outc
 
 ## Current Party
 {party_status}
+
+## Current Zone Map
+{zone_map}
 
 ## Recent History
 {recent_history}
@@ -130,6 +142,27 @@ resolve the action immediately using your normal tools (roll_dice, apply_damage,
 - If a player tries something impossible or nonsensical, explain why it won't work \
 and suggest alternatives.
 
+### Spatial Zones — Movement & Range
+- Each zone represents a small area (~10-15ft). Hop count between zones maps to distance:
+  same zone = melee (5ft), 1 hop ≈ 15ft, 2 hops ≈ 30ft, 4 hops ≈ 60ft.
+- When narrating a NEW scene (entering a building, starting an encounter), call setup_scene
+  to create zones, connections, and place all entities in one call. Aim for 4-8 zones per scene.
+  Example: A tavern might have zones: "entrance", "near fireplace", "bar counter", "back tables",
+  "kitchen door", "upstairs landing".
+- When a player moves ("I run to help Gandalf"), use move_entity.
+- Before resolving attacks or spells, use check_distance to verify range:
+  - Same zone = melee (5ft) — melee weapons work
+  - 1-2 zones = close (15-30ft) — ranged weapons, most combat spells
+  - 3-4 zones = medium (45-60ft) — longbows, fireball
+  - 5+ zones = far (75ft+) — only the longest-range spells
+- Include spatial context when calling rules_lawyer or spell_checker. Example:
+  "Can Aragorn attack Goblin #1 with a longsword? They are in the same zone (melee range)."
+  "Can Gandalf cast Fireball targeting the goblins? Gandalf is 3 zones away (~45ft)."
+- When the party moves to a new location, call clear_scene or setup_scene (which auto-clears).
+- Use remove_entity when an NPC dies, flees, or disappears.
+- Do NOT mention zones, hops, or distances to players. Narrate movement naturally:
+  "You sprint across the bridge to Gandalf's side" not "You move from zone A to zone B."
+
 ### Important
 - You may be responding to a player's initial action OR to their answer to a clarification \
 question you previously asked. Check the recent history for DM_CLARIFICATION and \
@@ -176,6 +209,27 @@ def _build_dm_notes(game_id: int) -> str:
     return "\n".join(lines)
 
 
+def _build_zone_map(game_id: int) -> str:
+    """Format the current zone map for the system prompt."""
+    zones = get_zones(game_id)
+    if not zones:
+        return "No zones set up yet."
+    lines = []
+    for z in zones:
+        desc = f" — {z.description}" if z.description else ""
+        occupants = get_zone_occupants(z.id)
+        occ_str = ""
+        if occupants:
+            names = [f"{e.name} ({e.entity_type})" for e in occupants]
+            occ_str = f" [{', '.join(names)}]"
+        adjacent = get_adjacent_zones(z.id)
+        adj_str = ""
+        if adjacent:
+            adj_str = f" → connects to: {', '.join(a.name for a in adjacent)}"
+        lines.append(f"- {z.name}{desc}{occ_str}{adj_str}")
+    return "\n".join(lines)
+
+
 def _build_recent_history(game_id: int, limit: int = 30) -> str:
     """Format recent events for the system prompt."""
     events = get_recent_events(game_id, limit=limit)
@@ -211,6 +265,7 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
         story_summary=_build_story_summary(game),
         dm_notes=_build_dm_notes(game_id),
         party_status=_build_party_status(game),
+        zone_map=_build_zone_map(game_id),
         recent_history=_build_recent_history(game_id),
     )
 
@@ -225,11 +280,13 @@ def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05
     inventory_tools = InventoryTools(game_id)
     campaign_tools = CampaignTools(game_id)
     memory_tools = MemoryTools(game_id)
+    zone_tools = ZoneTools(game_id)
     all_tools = (
         dm_tools.as_tools()
         + inventory_tools.as_tools()
         + campaign_tools.as_tools()
         + memory_tools.as_tools()
+        + zone_tools.as_tools()
     )
 
     # Sub-agent tools (rules validation)

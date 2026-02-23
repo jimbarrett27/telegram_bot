@@ -11,6 +11,8 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from dnd.db_engine import get_engine, get_session
+from collections import deque
+
 from dnd.models import (
     Game,
     Player,
@@ -19,6 +21,9 @@ from dnd.models import (
     SpellSlots,
     CampaignSection,
     DmNote,
+    Zone,
+    ZoneAdjacency,
+    ZoneEntity,
     GameStatus,
     CharacterClass,
     EventType,
@@ -32,6 +37,9 @@ from dnd.orm_models import (
     SpellSlotsORM,
     CampaignSectionORM,
     DmNoteORM,
+    ZoneORM,
+    ZoneAdjacencyORM,
+    ZoneEntityORM,
     game_orm_to_dataclass,
     player_orm_to_dataclass,
     event_orm_to_dataclass,
@@ -39,6 +47,9 @@ from dnd.orm_models import (
     spell_slots_orm_to_dataclass,
     campaign_section_orm_to_dataclass,
     dm_note_orm_to_dataclass,
+    zone_orm_to_dataclass,
+    zone_adjacency_orm_to_dataclass,
+    zone_entity_orm_to_dataclass,
 )
 
 
@@ -242,6 +253,26 @@ def delete_game(chat_id: int):
         game_orm = session.execute(stmt).scalar_one_or_none()
         if game_orm is None:
             return
+
+        # Delete zone entities
+        ze_stmt = select(ZoneEntityORM).where(ZoneEntityORM.game_id == game_orm.id)
+        for ze in session.execute(ze_stmt).scalars().all():
+            session.delete(ze)
+
+        # Delete zone adjacencies (via zones)
+        z_stmt = select(ZoneORM).where(ZoneORM.game_id == game_orm.id)
+        zone_orms = session.execute(z_stmt).scalars().all()
+        for zone in zone_orms:
+            za_stmt = select(ZoneAdjacencyORM).where(
+                (ZoneAdjacencyORM.zone_a_id == zone.id)
+                | (ZoneAdjacencyORM.zone_b_id == zone.id)
+            )
+            for za in session.execute(za_stmt).scalars().all():
+                session.delete(za)
+
+        # Delete zones
+        for zone in zone_orms:
+            session.delete(zone)
 
         # Delete DM notes
         dn_stmt = select(DmNoteORM).where(DmNoteORM.game_id == game_orm.id)
@@ -580,3 +611,242 @@ def get_stale_active_games(timeout_seconds: int = 86400) -> List[Game]:
             players = [player_orm_to_dataclass(p) for p in player_orms]
             results.append(game_orm_to_dataclass(game_orm, players))
         return results
+
+
+# --- Zone operations ---
+
+
+def create_zone(game_id: int, name: str, description: str = "") -> Zone:
+    """Create a zone in a game."""
+    now = int(time.time())
+    with get_session() as session:
+        orm = ZoneORM(
+            game_id=game_id,
+            name=name,
+            description=description,
+            created_at=now,
+        )
+        session.add(orm)
+        session.flush()
+        return zone_orm_to_dataclass(orm)
+
+
+def get_zones(game_id: int) -> List[Zone]:
+    """Get all zones for a game."""
+    with get_session() as session:
+        stmt = select(ZoneORM).where(ZoneORM.game_id == game_id).order_by(ZoneORM.id)
+        orms = session.execute(stmt).scalars().all()
+        return [zone_orm_to_dataclass(orm) for orm in orms]
+
+
+def get_zone_by_name(game_id: int, name: str) -> Optional[Zone]:
+    """Get a zone by name (case-insensitive)."""
+    with get_session() as session:
+        stmt = select(ZoneORM).where(ZoneORM.game_id == game_id)
+        orms = session.execute(stmt).scalars().all()
+        name_lower = name.lower()
+        for orm in orms:
+            if orm.name.lower() == name_lower:
+                return zone_orm_to_dataclass(orm)
+        return None
+
+
+def delete_zone(zone_id: int):
+    """Delete a zone and cascade to adjacencies and entities."""
+    with get_session() as session:
+        # Delete entities in this zone
+        ze_stmt = select(ZoneEntityORM).where(ZoneEntityORM.zone_id == zone_id)
+        for ze in session.execute(ze_stmt).scalars().all():
+            session.delete(ze)
+
+        # Delete adjacencies involving this zone
+        za_stmt = select(ZoneAdjacencyORM).where(
+            (ZoneAdjacencyORM.zone_a_id == zone_id)
+            | (ZoneAdjacencyORM.zone_b_id == zone_id)
+        )
+        for za in session.execute(za_stmt).scalars().all():
+            session.delete(za)
+
+        # Delete zone
+        orm = session.get(ZoneORM, zone_id)
+        if orm is not None:
+            session.delete(orm)
+
+
+def clear_zones(game_id: int):
+    """Delete all zones, adjacencies, and entities for a game."""
+    with get_session() as session:
+        # Delete entities
+        ze_stmt = select(ZoneEntityORM).where(ZoneEntityORM.game_id == game_id)
+        for ze in session.execute(ze_stmt).scalars().all():
+            session.delete(ze)
+
+        # Delete adjacencies (via zones)
+        z_stmt = select(ZoneORM).where(ZoneORM.game_id == game_id)
+        zone_orms = session.execute(z_stmt).scalars().all()
+        for zone in zone_orms:
+            za_stmt = select(ZoneAdjacencyORM).where(
+                (ZoneAdjacencyORM.zone_a_id == zone.id)
+                | (ZoneAdjacencyORM.zone_b_id == zone.id)
+            )
+            for za in session.execute(za_stmt).scalars().all():
+                session.delete(za)
+
+        # Delete zones
+        for zone in zone_orms:
+            session.delete(zone)
+
+
+def add_zone_adjacency(zone_a_id: int, zone_b_id: int) -> ZoneAdjacency:
+    """Add an adjacency between two zones. Stores smaller ID first."""
+    a, b = min(zone_a_id, zone_b_id), max(zone_a_id, zone_b_id)
+    with get_session() as session:
+        orm = ZoneAdjacencyORM(zone_a_id=a, zone_b_id=b)
+        session.add(orm)
+        session.flush()
+        return zone_adjacency_orm_to_dataclass(orm)
+
+
+def get_adjacent_zones(zone_id: int) -> List[Zone]:
+    """Get all zones adjacent to the given zone (bidirectional)."""
+    with get_session() as session:
+        stmt = select(ZoneAdjacencyORM).where(
+            (ZoneAdjacencyORM.zone_a_id == zone_id)
+            | (ZoneAdjacencyORM.zone_b_id == zone_id)
+        )
+        adj_orms = session.execute(stmt).scalars().all()
+        neighbor_ids = set()
+        for adj in adj_orms:
+            if adj.zone_a_id == zone_id:
+                neighbor_ids.add(adj.zone_b_id)
+            else:
+                neighbor_ids.add(adj.zone_a_id)
+
+        zones = []
+        for nid in neighbor_ids:
+            z_orm = session.get(ZoneORM, nid)
+            if z_orm is not None:
+                zones.append(zone_orm_to_dataclass(z_orm))
+        return zones
+
+
+def get_zone_distance(game_id: int, zone_a_name: str, zone_b_name: str) -> Optional[int]:
+    """BFS shortest path between two zones by name. Returns hop count or None if unreachable."""
+    with get_session() as session:
+        # Get all zones for this game
+        z_stmt = select(ZoneORM).where(ZoneORM.game_id == game_id)
+        zone_orms = session.execute(z_stmt).scalars().all()
+
+        name_to_id = {}
+        for z in zone_orms:
+            name_to_id[z.name.lower()] = z.id
+
+        start_id = name_to_id.get(zone_a_name.lower())
+        end_id = name_to_id.get(zone_b_name.lower())
+        if start_id is None or end_id is None:
+            return None
+        if start_id == end_id:
+            return 0
+
+        # Build adjacency map
+        all_zone_ids = set(name_to_id.values())
+        adj_map: dict[int, set[int]] = {zid: set() for zid in all_zone_ids}
+
+        for zid in all_zone_ids:
+            adj_stmt = select(ZoneAdjacencyORM).where(
+                (ZoneAdjacencyORM.zone_a_id == zid)
+                | (ZoneAdjacencyORM.zone_b_id == zid)
+            )
+            for adj in session.execute(adj_stmt).scalars().all():
+                other = adj.zone_b_id if adj.zone_a_id == zid else adj.zone_a_id
+                if other in all_zone_ids:
+                    adj_map[zid].add(other)
+
+        # BFS
+        visited = {start_id}
+        queue = deque([(start_id, 0)])
+        while queue:
+            current, dist = queue.popleft()
+            for neighbor in adj_map.get(current, set()):
+                if neighbor == end_id:
+                    return dist + 1
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, dist + 1))
+
+        return None
+
+
+def place_entity_in_zone(
+    zone_id: int,
+    game_id: int,
+    name: str,
+    player_id: Optional[int] = None,
+    entity_type: str = "npc",
+) -> ZoneEntity:
+    """Place an entity in a zone. Removes from previous zone first."""
+    now = int(time.time())
+    with get_session() as session:
+        # Remove existing placement
+        existing = select(ZoneEntityORM).where(
+            ZoneEntityORM.game_id == game_id,
+            ZoneEntityORM.name == name,
+        )
+        for e in session.execute(existing).scalars().all():
+            session.delete(e)
+        session.flush()
+
+        orm = ZoneEntityORM(
+            zone_id=zone_id,
+            game_id=game_id,
+            name=name,
+            player_id=player_id,
+            entity_type=entity_type,
+            created_at=now,
+        )
+        session.add(orm)
+        session.flush()
+        return zone_entity_orm_to_dataclass(orm)
+
+
+def remove_entity_from_zones(game_id: int, name: str):
+    """Remove all zone placements for an entity."""
+    with get_session() as session:
+        stmt = select(ZoneEntityORM).where(
+            ZoneEntityORM.game_id == game_id,
+            ZoneEntityORM.name == name,
+        )
+        for e in session.execute(stmt).scalars().all():
+            session.delete(e)
+
+
+def get_zone_occupants(zone_id: int) -> List[ZoneEntity]:
+    """Get all entities in a zone."""
+    with get_session() as session:
+        stmt = select(ZoneEntityORM).where(ZoneEntityORM.zone_id == zone_id)
+        orms = session.execute(stmt).scalars().all()
+        return [zone_entity_orm_to_dataclass(orm) for orm in orms]
+
+
+def get_entity_zone(game_id: int, name: str) -> Optional[Zone]:
+    """Get the zone an entity is in."""
+    with get_session() as session:
+        stmt = select(ZoneEntityORM).where(
+            ZoneEntityORM.game_id == game_id,
+            ZoneEntityORM.name == name,
+        )
+        entity_orm = session.execute(stmt).scalar_one_or_none()
+        if entity_orm is None:
+            return None
+        zone_orm = session.get(ZoneORM, entity_orm.zone_id)
+        if zone_orm is None:
+            return None
+        return zone_orm_to_dataclass(zone_orm)
+
+
+def get_all_zone_entities(game_id: int) -> List[ZoneEntity]:
+    """Get all entities placed in zones for a game."""
+    with get_session() as session:
+        stmt = select(ZoneEntityORM).where(ZoneEntityORM.game_id == game_id)
+        orms = session.execute(stmt).scalars().all()
+        return [zone_entity_orm_to_dataclass(orm) for orm in orms]

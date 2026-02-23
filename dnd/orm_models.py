@@ -19,6 +19,9 @@ from dnd.models import (
     SpellSlots,
     CampaignSection,
     DmNote,
+    Zone,
+    ZoneAdjacency,
+    ZoneEntity,
     GameStatus,
     CharacterClass,
     EventType,
@@ -176,6 +179,58 @@ class DmNoteORM(Base):
     )
 
 
+class ZoneORM(Base):
+    """SQLAlchemy model for zones table."""
+
+    __tablename__ = "zones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("game_id", "name", name="uq_zone_game_name"),
+        Index("idx_zones_game_id", "game_id"),
+    )
+
+
+class ZoneAdjacencyORM(Base):
+    """SQLAlchemy model for zone_adjacencies table."""
+
+    __tablename__ = "zone_adjacencies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_a_id: Mapped[int] = mapped_column(Integer, ForeignKey("zones.id"), nullable=False)
+    zone_b_id: Mapped[int] = mapped_column(Integer, ForeignKey("zones.id"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("zone_a_id", "zone_b_id", name="uq_zone_adjacency"),
+        Index("idx_zone_adj_a", "zone_a_id"),
+        Index("idx_zone_adj_b", "zone_b_id"),
+    )
+
+
+class ZoneEntityORM(Base):
+    """SQLAlchemy model for zone_entities table."""
+
+    __tablename__ = "zone_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_id: Mapped[int] = mapped_column(Integer, ForeignKey("zones.id"), nullable=False)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    player_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("players.id"), nullable=True)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False, default="npc")
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_zone_entities_zone_id", "zone_id"),
+        Index("idx_zone_entities_game_id", "game_id"),
+    )
+
+
 # Conversion functions
 
 
@@ -290,5 +345,38 @@ def campaign_section_orm_to_dataclass(orm: CampaignSectionORM) -> CampaignSectio
         section_title=orm.section_title,
         section_content=orm.section_content,
         section_order=orm.section_order,
+        created_at=orm.created_at or 0,
+    )
+
+
+def zone_orm_to_dataclass(orm: ZoneORM) -> Zone:
+    """Convert a ZoneORM instance to a Zone dataclass."""
+    return Zone(
+        id=orm.id,
+        game_id=orm.game_id,
+        name=orm.name,
+        description=orm.description or "",
+        created_at=orm.created_at or 0,
+    )
+
+
+def zone_adjacency_orm_to_dataclass(orm: ZoneAdjacencyORM) -> ZoneAdjacency:
+    """Convert a ZoneAdjacencyORM instance to a ZoneAdjacency dataclass."""
+    return ZoneAdjacency(
+        id=orm.id,
+        zone_a_id=orm.zone_a_id,
+        zone_b_id=orm.zone_b_id,
+    )
+
+
+def zone_entity_orm_to_dataclass(orm: ZoneEntityORM) -> ZoneEntity:
+    """Convert a ZoneEntityORM instance to a ZoneEntity dataclass."""
+    return ZoneEntity(
+        id=orm.id,
+        zone_id=orm.zone_id,
+        game_id=orm.game_id,
+        name=orm.name,
+        player_id=orm.player_id,
+        entity_type=orm.entity_type or "npc",
         created_at=orm.created_at or 0,
     )
