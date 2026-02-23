@@ -116,11 +116,16 @@ encounters, traps, or items, use the lookup_campaign tool.
 - Use get_recent_history if you need to recall what happened earlier.
 
 ### Narration Style
-- Write vivid, engaging narration in 1-3 paragraphs.
-- Address the active player directly to prompt their next action.
-- Keep the tone fun and dramatic — this is an adventure!
-- Describe what the player sees, hears, and feels.
-- End your response with a prompt for what the player wants to do next.
+- Write in a quiet, understated style. Plain language, short sentences, concrete details.
+- No flowery high-fantasy prose. No "the ancient chamber echoes with eldritch power." \
+Instead: "The room is cold. Water drips somewhere in the dark."
+- Describe small, specific sensory details — the smell of wet stone, the weight of a sword, \
+the sound of footsteps on gravel. Let the atmosphere come from the details, not from adjectives.
+- Deadpan tone. Understate danger rather than overselling it. A dragon is just there, \
+watching. The goblin is eating an apple. The tension comes from what's unsaid.
+- Keep narration to 1-3 short paragraphs. Be economical with words.
+- Address the active player directly. End with a simple prompt for their next action.
+- Moments of dry humor are welcome. Moments of melodrama are not.
 
 ### Clarification
 - If a player's action is ambiguous and the ambiguity would meaningfully change the outcome, \
@@ -241,7 +246,7 @@ def _build_recent_history(game_id: int, limit: int = 30) -> str:
     return "\n".join(lines)
 
 
-def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-flash-preview-05-20") -> Agent:
+def create_dm_agent(game_id: int, model_name: str = "gemini-2.5-pro") -> Agent:
     """Create a Dungeon Master agent for the given game.
 
     The agent is configured with:

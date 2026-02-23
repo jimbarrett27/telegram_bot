@@ -252,9 +252,9 @@ def finalize_action(game: Game, player: Player, resolution_text: str) -> tuple[s
 def generate_intro(game: Game, active_player: Player) -> str:
     """Generate the adventure intro narration using the DM agent."""
     message = (
-        f"Generate an exciting opening narration for this adventure. "
+        f"Generate an opening narration for this adventure. "
         f"The party has just arrived at the adventure location. "
-        f"Set the scene and atmosphere in 2-3 paragraphs. "
+        f"Set the scene in 2-3 short paragraphs. Keep it grounded and understated. "
         f"The first player to act is {active_player.character_name} "
         f"(@{active_player.telegram_username}). "
         f"End by prompting them to decide their first action."
