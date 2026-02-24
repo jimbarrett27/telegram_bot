@@ -45,6 +45,8 @@ class GameORM(Base):
     turn_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     story_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    campaign_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    recommended_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -244,6 +246,8 @@ def game_orm_to_dataclass(orm: GameORM, players: list[Player] | None = None) -> 
         current_player_id=orm.current_player_id,
         turn_number=orm.turn_number or 0,
         story_summary=orm.story_summary or "",
+        campaign_name=orm.campaign_name or "",
+        recommended_level=orm.recommended_level or 1,
         created_at=orm.created_at or 0,
         updated_at=orm.updated_at or 0,
         players=players or [],

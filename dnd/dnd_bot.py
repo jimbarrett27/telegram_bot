@@ -36,7 +36,7 @@ from dnd.game_logic import (
     continue_player_action,
     finalize_action,
 )
-from dnd.campaign_loader import list_available_campaigns
+from dnd.campaign_loader import list_available_campaigns, get_campaign_recommended_level
 from dnd.ai_player import auto_play_turn
 from util.logging_util import setup_logger
 
@@ -46,7 +46,12 @@ VALID_CLASSES = {c.value for c in CharacterClass}
 
 
 async def dnd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Create a new D&D game in this group chat."""
+    """Create a new D&D game in this group chat.
+
+    Usage: /dnd_new [campaign_name]
+    If a campaign is specified, characters will be created at the campaign's
+    recommended level. Otherwise defaults to level 1.
+    """
     chat_id = update.effective_chat.id
 
     existing = get_game_by_chat(chat_id)
@@ -57,20 +62,33 @@ async def dnd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    game = create_game(chat_id)
+    campaign_name = ""
+    recommended_level = 1
+    if context.args:
+        campaign_name = " ".join(context.args)
+        recommended_level = get_campaign_recommended_level(campaign_name)
+
+    game = create_game(chat_id, campaign_name=campaign_name, recommended_level=recommended_level)
 
     adventures = list_available_campaigns()
     adventure_line = ""
     if adventures:
-        adventure_line = f"\nAvailable adventures: {', '.join(adventures)}\n"
+        adventure_line = f"\nAvailable adventures: {', '.join(adventures)}"
+
+    level_line = ""
+    if campaign_name:
+        level_line = f"\nCampaign: {campaign_name} (recommended level {recommended_level})"
+    else:
+        level_line = "\nNo campaign selected — characters will be level 1. Use /dnd_new <campaign> to set one."
 
     await update.message.reply_text(
-        "A new D&D adventure has been created! "
+        "A new D&D adventure has been created!\n"
         "Players can join with /dnd_join <name> <class>\n"
         "Add AI companions with /dnd_add_ai <name> <class>\n"
         f"Available classes: {', '.join(VALID_CLASSES)}"
-        f"{adventure_line}\n"
-        "Start the adventure with /dnd_start [adventure_name] (needs at least 1 player)."
+        f"{adventure_line}"
+        f"{level_line}\n\n"
+        "Start the adventure with /dnd_start (needs at least 1 player)."
     )
 
 
@@ -115,7 +133,8 @@ async def dnd_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     character_class = CharacterClass(class_str)
-    template = get_template(character_class)
+    level = game.recommended_level
+    template = get_template(character_class, level)
     attrs = template["attributes"]
 
     player = add_player(
@@ -126,6 +145,7 @@ async def dnd_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         character_class=character_class,
         hp=template["hp"],
         max_hp=template["max_hp"],
+        level=level,
         **attrs,
     )
 
@@ -145,8 +165,9 @@ async def dnd_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         create_spell_slots(player_id=player.id, **template["spell_slots"])
 
     player_count = len(game.players) + 1
+    level_info = f" (Level {level})" if level > 1 else ""
     await update.message.reply_text(
-        f"{character_name} the {class_str.title()} has joined the party! "
+        f"{character_name} the {class_str.title()}{level_info} has joined the party! "
         f"({player_count}/4 players)"
     )
 
@@ -186,7 +207,8 @@ async def dnd_add_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     character_class = CharacterClass(class_str)
-    template = get_template(character_class)
+    level = game.recommended_level
+    template = get_template(character_class, level)
     attrs = template["attributes"]
 
     # Use a placeholder telegram_user_id for AI players (negative to avoid conflicts)
@@ -202,6 +224,7 @@ async def dnd_add_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         hp=template["hp"],
         max_hp=template["max_hp"],
         is_ai=True,
+        level=level,
         **attrs,
     )
 
@@ -221,8 +244,9 @@ async def dnd_add_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         create_spell_slots(player_id=player.id, **template["spell_slots"])
 
     player_count = len(game.players) + 1
+    level_info = f" (Level {level})" if level > 1 else ""
     await update.message.reply_text(
-        f"{character_name} the {class_str.title()} [AI] has joined the party! "
+        f"{character_name} the {class_str.title()}{level_info} [AI] has joined the party! "
         f"({player_count}/4 players)"
     )
 
@@ -247,15 +271,18 @@ async def dnd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
+    # Use campaign from args, or fall back to what was set at /dnd_new
     adventure_name = None
     if context.args:
         adventure_name = " ".join(context.args)
+    elif game.campaign_name:
+        adventure_name = game.campaign_name
 
     loading_msg = "The adventure begins!"
     if adventure_name:
         loading_msg += f" Loading '{adventure_name}'..."
     else:
-        loading_msg += " Loading campaign..."
+        loading_msg += " Loading default campaign..."
     await update.message.reply_text(loading_msg)
 
     try:

@@ -5,6 +5,7 @@ structured sections for storage in the database. No LLM or PDF
 library needed at runtime.
 """
 
+import re
 from pathlib import Path
 
 from dnd.database import store_campaign_sections
@@ -35,6 +36,23 @@ def get_campaign_path(campaign_name: str) -> Path | None:
             return md
 
     return None
+
+
+def get_campaign_recommended_level(campaign_name: str) -> int:
+    """Read the recommended_level from a campaign's HTML comment metadata.
+
+    Looks for ``<!-- recommended_level: N -->`` near the top of the file.
+    Returns 1 if the campaign is not found or has no metadata.
+    """
+    md_path = get_campaign_path(campaign_name)
+    if md_path is None:
+        return 1
+
+    text = md_path.read_text()
+    match = re.search(r"<!--\s*recommended_level:\s*(\d+)\s*-->", text)
+    if match:
+        return int(match.group(1))
+    return 1
 
 
 def parse_campaign_markdown(md_path: Path) -> list[dict]:

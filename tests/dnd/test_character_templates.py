@@ -10,7 +10,8 @@ class TestCharacterTemplates:
 
     def test_all_classes_have_templates(self):
         for cls in CharacterClass:
-            assert cls in CHARACTER_TEMPLATES, f"Missing template for {cls}"
+            for level in range(1, 6):
+                assert (cls, level) in CHARACTER_TEMPLATES, f"Missing template for {cls} level {level}"
 
     @pytest.mark.parametrize("cls", list(CharacterClass))
     def test_template_has_required_keys(self, cls):

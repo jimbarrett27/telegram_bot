@@ -18,6 +18,10 @@ class CharacterClass(Enum):
     MAGE = "mage"
     ROGUE = "rogue"
     CLERIC = "cleric"
+    BARD = "bard"
+    DRUID = "druid"
+    BARBARIAN = "barbarian"
+    MONK = "monk"
 
 
 class EventType(Enum):
@@ -95,6 +99,8 @@ class Game:
     current_player_id: Optional[int] = None
     turn_number: int = 0
     story_summary: str = ""
+    campaign_name: str = ""
+    recommended_level: int = 1
     created_at: int = 0
     updated_at: int = 0
     id: Optional[int] = None

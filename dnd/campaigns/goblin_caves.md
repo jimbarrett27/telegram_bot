@@ -1,3 +1,4 @@
+<!-- recommended_level: 1 -->
 # The Goblin Caves of Thornwood
 
 A short adventure for a party of 1st-3rd level characters. The village of Bramblewood needs heroes to track down a goblin raiding party and rescue a kidnapped child.

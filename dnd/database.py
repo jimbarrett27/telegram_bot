@@ -59,7 +59,11 @@ def init_db():
     Base.metadata.create_all(engine)
 
 
-def create_game(chat_id: int) -> Game:
+def create_game(
+    chat_id: int,
+    campaign_name: str = "",
+    recommended_level: int = 1,
+) -> Game:
     """Create a new game for a chat. Returns the created Game."""
     now = int(time.time())
     with get_session() as session:
@@ -67,6 +71,8 @@ def create_game(chat_id: int) -> Game:
             chat_id=chat_id,
             status=GameStatus.RECRUITING.value,
             adventure_text="",
+            campaign_name=campaign_name,
+            recommended_level=recommended_level,
             turn_number=0,
             created_at=now,
             updated_at=now,
@@ -120,6 +126,7 @@ def add_player(
     wisdom: int = 10,
     charisma: int = 10,
     is_ai: bool = False,
+    level: int = 1,
 ) -> Player:
     """Add a player to a game. Returns the created Player."""
     now = int(time.time())
@@ -132,7 +139,7 @@ def add_player(
             character_class=character_class.value,
             hp=hp,
             max_hp=max_hp,
-            level=1,
+            level=level,
             strength=strength,
             dexterity=dexterity,
             constitution=constitution,
