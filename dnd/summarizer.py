@@ -40,7 +40,7 @@ Write the updated summary now:"""
 
 def summarize_events(
     game_id: int,
-    model_name: str = "gemini-2.5-flash-preview-05-20",
+    model_name: str = "gemini-2.5-flash",
 ) -> str:
     """Summarize recent events and update the game's story_summary.
 

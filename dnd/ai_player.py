@@ -75,7 +75,7 @@ Answer the question directly in 1 sentence.
 def generate_ai_action(
     game_id: int,
     player_id: int,
-    model_name: str = "gemini-2.5-flash-preview-05-20",
+    model_name: str = "gemini-2.5-flash",
 ) -> str:
     """Generate an action for an AI-controlled player.
 
@@ -155,7 +155,7 @@ def generate_ai_clarification_response(
     game_id: int,
     player_id: int,
     question: str,
-    model_name: str = "gemini-2.5-flash-preview-05-20",
+    model_name: str = "gemini-2.5-flash",
 ) -> str:
     """Generate an AI player's response to a DM clarification question."""
     player = get_player_by_id(player_id)

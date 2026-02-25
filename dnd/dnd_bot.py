@@ -4,7 +4,7 @@ Telegram command handlers for the D&D async game system.
 
 import asyncio
 
-from telegram import Update
+from telegram import ForceReply, Update
 from telegram.ext import (
     CommandHandler,
     ConversationHandler,
@@ -391,7 +391,10 @@ async def _handle_action_text(
         event_type=EventType.DM_CLARIFICATION,
         content=dm_response.text,
     )
-    await update.message.reply_text(dm_response.text)
+    await update.message.reply_text(
+        dm_response.text,
+        reply_markup=ForceReply(selective=True),
+    )
 
     context.chat_data[_CD_GAME_ID] = game.id
     context.chat_data[_CD_PLAYER_ID] = player.id
@@ -440,7 +443,8 @@ async def dnd_action_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # No args — prompt the player (fixes #1 auto-send issue)
     await update.message.reply_text(
         f"{player.character_name}, what do you want to do?\n"
-        "(Type your action, or /dnd_cancel to cancel)"
+        "(Type your action, or /dnd_cancel to cancel)",
+        reply_markup=ForceReply(selective=True),
     )
 
     context.chat_data[_CD_GAME_ID] = game.id
@@ -497,7 +501,10 @@ async def dnd_action_clarification(update: Update, context: ContextTypes.DEFAULT
         event_type=EventType.DM_CLARIFICATION,
         content=dm_response.text,
     )
-    await update.message.reply_text(dm_response.text)
+    await update.message.reply_text(
+        dm_response.text,
+        reply_markup=ForceReply(selective=True),
+    )
 
     context.chat_data[_CD_EXCHANGE_COUNT] = exchange_count + 1
 
