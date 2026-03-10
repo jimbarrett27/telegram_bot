@@ -80,6 +80,17 @@ def get_photo_email_password() -> str:
 
 
 @lru_cache(maxsize=1)
+def get_dnd_allowed_chat_ids() -> list[int]:
+    try:
+        raw = get_gcp_secret(GCPSecret(
+            project_id="personal-website-318015", secret_id="DND_ALLOWED_CHAT_IDS", version="latest"
+        ))
+        return [int(x.strip()) for x in raw.split(",") if x.strip()]
+    except Exception:
+        return []
+
+
+@lru_cache(maxsize=1)
 def get_photos_allowed_user_ids() -> list[int]:
     raw = get_gcp_secret(GCPSecret(
         project_id="personal-website-318015", secret_id="PHOTOS_ALLOWED_USER_IDS", version="latest"

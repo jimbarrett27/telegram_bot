@@ -20,6 +20,7 @@ from dnd.game_manager import (
 )
 from dnd.models import GAME_LOBBY, GAME_ACTIVE
 from dnd import database as db
+from gcp_util.secrets import get_telegram_user_id, get_dnd_allowed_chat_ids
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
@@ -57,6 +58,11 @@ CANCEL_KEYBOARD = ReplyKeyboardMarkup(
 TURN_TIMEOUT_HOURS = 24
 
 game_manager = GameManager()
+
+
+def _is_allowed_chat(chat_id: int) -> bool:
+    allowed = get_dnd_allowed_chat_ids() + [get_telegram_user_id()]
+    return chat_id in allowed
 
 
 def get_keyboard(chat_id: int, user_id: int) -> ReplyKeyboardMarkup:
@@ -328,6 +334,8 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
+    if not _is_allowed_chat(chat_id):
+        return
     user_id = update.effective_user.id
     await update.message.reply_text(
         "RPG Bot ready! Use the buttons below.",
@@ -337,6 +345,8 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
+    if not _is_allowed_chat(chat_id):
+        return
     user_id = update.effective_user.id
     await update.message.reply_text(
         "Use the buttons below to interact.",
