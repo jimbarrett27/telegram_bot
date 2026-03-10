@@ -28,22 +28,18 @@ logger = setup_logger(__name__)
 
 async def swedish_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Welcome! I can help you practise Swedish.\n\n"
-        "Use /help to see available commands.",
+        "Welcome! I can help you practise Swedish.",
+        reply_markup=swedish_bot.MAIN_MENU_KEYBOARD,
     )
 
 
 async def swedish_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    help_text = """Available commands:
-
-🇸🇪 Swedish Learning:
-• /practise - Practice a random flashcard
-• /add - Add a new word to your dictionary
+    help_text = """🇸🇪 Swedish Learning:
+• 🇸🇪 Practise - Practice a random flashcard
+• 📝 Add Word - Add a new word to your dictionary
 • sv add <type> <word> - Add word directly (type: noun, verb, adj, auto)
-• sv practise - Start practice directly
-
-Use /start to see this message again."""
-    await update.message.reply_text(help_text)
+• sv practise - Start practice directly"""
+    await update.message.reply_text(help_text, reply_markup=swedish_bot.MAIN_MENU_KEYBOARD)
 
 
 async def swedish_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -59,7 +55,8 @@ async def swedish_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                                   update.effective_user.username or "unknown",
                                   update.message.text)
     await update.message.reply_text(
-        "I didn't understand that. Use /help to see available commands.",
+        "I didn't understand that. Use the menu buttons or type 'sv help'.",
+        reply_markup=swedish_bot.MAIN_MENU_KEYBOARD,
     )
 
 
@@ -121,6 +118,9 @@ def build_swedish_app() -> Application:
     app.add_handler(CommandHandler("help", swedish_help))
     app.add_handler(swedish_bot.get_practice_conversation_handler())
     app.add_handler(swedish_bot.get_add_word_conversation_handler())
+    app.add_handler(MessageHandler(
+        filters.Regex(r"^❓ Help$"), swedish_help
+    ))
     app.add_handler(MessageHandler(
         filters.Regex(r"(?i)^(sv|🇸🇪)\s") & filters.TEXT,
         swedish_text_command,

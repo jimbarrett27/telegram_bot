@@ -30,11 +30,9 @@ AWAITING_PRACTICE_ANSWER = 0
 AWAITING_WORD_TYPE = 1
 AWAITING_WORD = 2
 
-# Main menu keyboard (imported where needed)
 MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🇸🇪 Practise", "📝 Add Word"],
-        ["📚 Papers Status", "🔍 Scan Papers"],
         ["❓ Help"],
     ],
     resize_keyboard=True,
