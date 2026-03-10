@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
+    CommandHandler,
     ConversationHandler,
     ContextTypes,
     MessageHandler,
@@ -323,6 +324,26 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(f"❓ {status}", reply_markup=get_keyboard(chat_id, user_id))
 
 
+# --- Start / fallback ---
+
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        "RPG Bot ready! Use the buttons below.",
+        reply_markup=get_keyboard(chat_id, user_id),
+    )
+
+
+async def handle_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        "Use the buttons below to interact.",
+        reply_markup=get_keyboard(chat_id, user_id),
+    )
+
+
 # --- Handlers list ---
 
 def get_handlers():
@@ -351,6 +372,7 @@ def get_handlers():
     )
 
     return [
+        CommandHandler("start", handle_start),
         join_conversation,
         act_conversation,
         MessageHandler(filters.Regex(r"^🎲 New Game$"), handle_new_game),
@@ -358,4 +380,5 @@ def get_handlers():
         MessageHandler(filters.Regex(r"^📜 Story$"), handle_story),
         MessageHandler(filters.Regex(r"^👤 Character$"), handle_character),
         MessageHandler(filters.Regex(r"^❓ Status$"), handle_status),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_fallback),
     ]
