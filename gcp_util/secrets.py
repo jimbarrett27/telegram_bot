@@ -80,6 +80,15 @@ def get_photo_email_password() -> str:
 
 
 @lru_cache(maxsize=1)
+def get_photos_allowed_user_ids() -> list[int]:
+    import json
+    raw = get_gcp_secret(GCPSecret(
+        project_id="personal-website-318015", secret_id="PHOTOS_ALLOWED_USER_IDS", version="latest"
+    ))
+    return json.loads(raw)
+
+
+@lru_cache(maxsize=1)
 def get_telegram_user_id() -> int:
     """
     Fetches the token for the main telegram bot

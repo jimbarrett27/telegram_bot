@@ -1,7 +1,7 @@
 from telegram import Update
-from telegram.ext import ContextTypes, MessageHandler, filters
+from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
 
-from gcp_util.secrets import get_telegram_user_id
+from gcp_util.secrets import get_telegram_user_id, get_photos_allowed_user_ids
 from photos.email_sender import send_photo_email
 from util.logging_util import setup_logger
 
@@ -9,7 +9,8 @@ logger = setup_logger(__name__)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user.id != get_telegram_user_id():
+    allowed = [get_telegram_user_id()] + get_photos_allowed_user_ids()
+    if update.effective_user.id not in allowed:
         await update.message.reply_text("Unauthorised.")
         return
 
@@ -26,5 +27,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"Failed to send photo: {e}")
 
 
+async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(f"Your Telegram user ID is: `{update.effective_user.id}`", parse_mode="Markdown")
+
+
 def get_handlers():
-    return [MessageHandler(filters.PHOTO, handle_photo)]
+    return [
+        CommandHandler("id", handle_id),
+        MessageHandler(filters.PHOTO, handle_photo),
+    ]
