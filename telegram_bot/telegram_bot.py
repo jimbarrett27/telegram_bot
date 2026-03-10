@@ -1,47 +1,26 @@
 import requests
-from gcp_util.secrets import get_telegram_bot_key, get_telegram_user_id
-from functools import lru_cache
+from gcp_util.secrets import get_telegram_user_id
 from util.logging_util import setup_logger, log_telegram_message_sent
 
 logger = setup_logger(__name__)
 
-@lru_cache
-def get_telegram_api_url() -> str:
 
-    return f"https://api.telegram.org/bot{get_telegram_bot_key()}"
+class TelegramBot:
+    def __init__(self, token: str):
+        self._api_url = f"https://api.telegram.org/bot{token}"
+        self._my_user_id = get_telegram_user_id()
 
+    def send_message(self, chat_id: int, message: str):
+        response_data = {"chat_id": chat_id, "text": message}
+        log_telegram_message_sent(logger, str(chat_id), message)
+        requests.post(f"{self._api_url}/sendMessage", json=response_data)
 
+    def send_message_to_me(self, message: str):
+        print(message)
+        self.send_message(self._my_user_id, message)
 
-
-def send_message(chat_id: int, message: str):
-    """
-    Sends a message to a specific chat_id
-    """
-    api_url = get_telegram_api_url()
-    response_data = {"chat_id": chat_id, "text": message}
-    
-    # Log the outgoing message
-    log_telegram_message_sent(logger, str(chat_id), message)
-    
-    requests.post(
-        f"{api_url}/sendMessage",
-        json=response_data,
-    )
-
-def send_message_to_me(message: str):
-    """
-    Sends a message to me from my bot
-    """
-    print(message)
-    send_message(get_telegram_user_id(), message)
-
-def get_telegram_updates(offset: int = 0) -> list[dict]:
-    """
-    Fetches the raw updates from telegram
-    """
-    api_url = get_telegram_api_url()
-    resp_json = requests.get(f"{api_url}/getUpdates", json={'offset': offset}).json()
-    
-    # Check if 'result' is in the response, if not return empty list
-    return resp_json.get('result', [])
-    
+    def get_updates(self, offset: int = 0) -> list[dict]:
+        resp_json = requests.get(
+            f"{self._api_url}/getUpdates", json={"offset": offset}
+        ).json()
+        return resp_json.get("result", [])

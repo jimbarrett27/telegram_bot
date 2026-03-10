@@ -1,4 +1,8 @@
-from telegram import Update, ReplyKeyboardMarkup
+import asyncio
+import signal
+from datetime import time as dt_time
+
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -7,209 +11,176 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from gcp_util.secrets import get_telegram_bot_key
+from gcp_util.secrets import get_swedish_bot_key, get_minecraft_bot_key
 from swedish.database import init_db as init_swedish_db, populate_db
 from swedish import swedish_bot
-# from content_screening.database import init_db as init_screening_db
-# from content_screening import screening_bot
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
 from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
-# from content_screening.scanner import run_daily_scan_if_due
+from telegram_bot.telegram_bot import TelegramBot
 from util.logging_util import setup_logger, log_telegram_message_received
 
 logger = setup_logger(__name__)
 
-# Main menu keyboard
-MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
-    [
-        ["🇸🇪 Practise", "📝 Add Word"],
-        # ["📚 Papers Status", "🔍 Scan Papers"],
-        ["🖥️ Server Status", "❓ Help"],
-    ],
-    resize_keyboard=True,
-)
 
+# --- Swedish bot handlers ---
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message with the main menu keyboard."""
+async def swedish_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Welcome! Choose an option:",
-        reply_markup=MAIN_MENU_KEYBOARD,
+        "Welcome! I can help you practise Swedish.\n\n"
+        "Use /help to see available commands.",
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show help message."""
+async def swedish_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     help_text = """Available commands:
 
 🇸🇪 Swedish Learning:
-• 🇸🇪 Practise - Practice a random flashcard
-• 📝 Add Word - Add a new word to your dictionary
+• /practise - Practice a random flashcard
+• /add - Add a new word to your dictionary
 • sv add <type> <word> - Add word directly (type: noun, verb, adj, auto)
 • sv practise - Start practice directly
 
-🖥️ Minecraft Server:
-• 🖥️ Server Status - Check server & tunnel health
-• Daily summary at 10am, with instant alerts on changes
-
-Use /start to show the menu keyboard."""
-    await update.message.reply_text(help_text, reply_markup=MAIN_MENU_KEYBOARD)
+Use /start to see this message again."""
+    await update.message.reply_text(help_text)
 
 
-# async def handle_papers_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """Handle papers status button."""
-#     log_telegram_message_received(logger, str(update.effective_chat.id),
-#                                   update.effective_user.username or "unknown",
-#                                   update.message.text)
-#     await screening_bot.handle_status_async(update, context)
-#
-#
-# async def handle_papers_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """Handle papers scan button - scans all feeds (ArXiv and RSS)."""
-#     log_telegram_message_received(logger, str(update.effective_chat.id),
-#                                   update.effective_user.username or "unknown",
-#                                   update.message.text)
-#     await screening_bot.handle_scan_async(update, context, scan_type="all")
-
-
-async def handle_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text-based commands (sv ..., papers ...)."""
+async def swedish_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text
-    chat_id = update.effective_chat.id
-    username = update.effective_user.username or "unknown"
-
-    log_telegram_message_received(logger, str(chat_id), username, text)
-
-    command = text.split()[0].lower()
-
-    if command in ("sv", "🇸🇪"):
-        rest = ' '.join(text.split()[1:]).strip()
-        await swedish_bot.handle_text_command_async(update, context, rest)
-    # elif command == "papers":
-    #     rest = ' '.join(text.split()[1:]).strip()
-    #     await screening_bot.handle_text_command_async(update, context, rest)
-    else:
-        await update.message.reply_text(
-            f"Unrecognised command: {command}",
-            reply_markup=MAIN_MENU_KEYBOARD,
-        )
+    log_telegram_message_received(logger, str(update.effective_chat.id),
+                                  update.effective_user.username or "unknown", text)
+    rest = ' '.join(text.split()[1:]).strip()
+    await swedish_bot.handle_text_command_async(update, context, rest)
 
 
-async def handle_rating_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle numeric rating replies for papers."""
-    text = update.message.text.strip()
-    chat_id = update.effective_chat.id
-    username = update.effective_user.username or "unknown"
-
-    log_telegram_message_received(logger, str(chat_id), username, text)
-
-    # handled = await screening_bot.handle_rating_reply_async(update, context, text)
-    # if not handled:
-    #     # Not a valid rating, show help
+async def swedish_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    log_telegram_message_received(logger, str(update.effective_chat.id),
+                                  update.effective_user.username or "unknown",
+                                  update.message.text)
     await update.message.reply_text(
-        "I didn't understand that. Use the menu buttons or type a command.",
-        reply_markup=MAIN_MENU_KEYBOARD,
+        "I didn't understand that. Use /help to see available commands.",
     )
 
 
-async def handle_server_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle server status button - run on-demand healthcheck."""
+# --- Minecraft bot handlers ---
+
+async def minecraft_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Minecraft server monitor bot.\n\n"
+        "Use /status to check server health.",
+    )
+
+
+async def minecraft_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_text = """Available commands:
+
+🖥️ Minecraft Server:
+• /status - Check server & tunnel health
+• Automatic alerts when server state changes
+• Daily summary at 10am"""
+    await update.message.reply_text(help_text)
+
+
+async def minecraft_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     log_telegram_message_received(logger, str(update.effective_chat.id),
                                   update.effective_user.username or "unknown",
                                   update.message.text)
     await update.message.reply_text("Checking server status...")
     msg = run_on_demand_check()
-    await update.message.reply_text(msg, reply_markup=MAIN_MENU_KEYBOARD)
+    await update.message.reply_text(msg)
 
 
 async def periodic_tasks(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Run periodic background tasks (called by job queue)."""
     try:
-        react_to_minecraft_logs()
-        # run_daily_scan_if_due()
+        react_to_minecraft_logs(context.bot_data["minecraft_bot"])
     except Exception as e:
         logger.error(f"Error in periodic tasks: {e}")
 
 
 async def healthcheck_task(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Run periodic healthcheck (called by job queue every 5 minutes)."""
     try:
-        run_healthcheck()
+        run_healthcheck(context.bot_data["minecraft_bot"])
     except Exception as e:
         logger.error(f"Error in healthcheck: {e}")
 
 
 async def daily_summary_task(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send daily healthcheck summary (called by job queue once a day)."""
     try:
-        run_daily_summary()
+        run_daily_summary(context.bot_data["minecraft_bot"])
     except Exception as e:
         logger.error(f"Error in daily summary: {e}")
 
 
-def main():
-    print("Starting telegram bot...")
-    init_swedish_db()
-    # init_screening_db()
-    populate_db()
+# --- App setup ---
 
-    app = Application.builder().token(get_telegram_bot_key()).build()
+def build_swedish_app() -> Application:
+    app = Application.builder().token(get_swedish_bot_key()).build()
 
-    # Command handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-
-    # Swedish bot conversation handlers
+    app.add_handler(CommandHandler("start", swedish_start))
+    app.add_handler(CommandHandler("help", swedish_help))
     app.add_handler(swedish_bot.get_practice_conversation_handler())
     app.add_handler(swedish_bot.get_add_word_conversation_handler())
-
-    # # Button handlers for papers
-    # app.add_handler(MessageHandler(
-    #     filters.Regex(r"^📚 Papers Status$"), handle_papers_status
-    # ))
-    # app.add_handler(MessageHandler(
-    #     filters.Regex(r"^🔍 Scan Papers$"), handle_papers_scan
-    # ))
-
-    # Server status button
     app.add_handler(MessageHandler(
-        filters.Regex(r"^🖥️ Server Status$"), handle_server_status
+        filters.Regex(r"(?i)^(sv|🇸🇪)\s") & filters.TEXT,
+        swedish_text_command,
     ))
-
-    # Help button
-    app.add_handler(MessageHandler(
-        filters.Regex(r"^❓ Help$"), help_command
-    ))
-
-    # Text command handlers (sv ..., papers ...)
-    app.add_handler(MessageHandler(
-        filters.Regex(r"(?i)^(sv|🇸🇪)\s") & filters.TEXT,  # papers disabled
-        handle_text_command
-    ))
-
-    # # Numeric replies for paper ratings
-    # app.add_handler(MessageHandler(
-    #     filters.Regex(r"^\d{1,2}$") & filters.TEXT,
-    #     handle_rating_reply
-    # ))
-
-    # Fallback for unrecognized messages
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        handle_rating_reply  # Will show help if not a valid rating
+        swedish_fallback,
     ))
 
-    # Schedule periodic tasks (minecraft logs, daily scans) - run every 60 seconds
+    return app
+
+
+def build_minecraft_app() -> Application:
+    app = Application.builder().token(get_minecraft_bot_key()).build()
+    app.bot_data["minecraft_bot"] = TelegramBot(get_minecraft_bot_key())
+
+    app.add_handler(CommandHandler("start", minecraft_start))
+    app.add_handler(CommandHandler("help", minecraft_help))
+    app.add_handler(CommandHandler("status", minecraft_status))
+
     if app.job_queue:
-        from datetime import time as dt_time
         app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
         app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
         app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
     else:
-        logger.warning("JobQueue not available - periodic tasks disabled. Install with: pip install 'python-telegram-bot[job-queue]'")
+        logger.warning("JobQueue not available - periodic tasks disabled.")
 
-    print("Bot is running...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    return app
+
+
+async def run():
+    swedish_app = build_swedish_app()
+    minecraft_app = build_minecraft_app()
+
+    async with swedish_app, minecraft_app:
+        await swedish_app.start()
+        await swedish_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await minecraft_app.start()
+        await minecraft_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+
+        logger.info("All bots are running.")
+        print("All bots are running...")
+
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop_event.set)
+
+        await stop_event.wait()
+
+        print("Shutting down...")
+        await swedish_app.updater.stop()
+        await swedish_app.stop()
+        await minecraft_app.updater.stop()
+        await minecraft_app.stop()
+
+
+def main():
+    print("Starting telegram bots...")
+    init_swedish_db()
+    populate_db()
+    asyncio.run(run())
 
 
 if __name__ == "__main__":

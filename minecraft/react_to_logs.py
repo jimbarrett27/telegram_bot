@@ -1,8 +1,13 @@
-from telegram_bot.telegram_bot import send_message_to_me
+from __future__ import annotations
+
 import re
 import subprocess
 import threading
 import queue
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from telegram_bot.telegram_bot import TelegramBot
 
 PLAYER_JOINED_REGEX = re.compile(r"joined the game", re.IGNORECASE)
 TIMESTAMP_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
@@ -35,10 +40,10 @@ def follow_journal(unit: str) -> queue.Queue[str]:
     return q
 
 
-def react_to_logs():
-    queue = get_log_queue()
-    while not queue.empty():
-        line = queue.get() 
+def react_to_logs(bot: TelegramBot):
+    log_queue = get_log_queue()
+    while not log_queue.empty():
+        line = log_queue.get()
         if PLAYER_JOINED_REGEX.search(line):
-            send_message_to_me(line)
+            bot.send_message_to_me(line)
         

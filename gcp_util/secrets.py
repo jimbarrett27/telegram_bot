@@ -35,15 +35,26 @@ def get_gcp_secret(gcp_secret: GCPSecret) -> str:
 
 
 @lru_cache(maxsize=1)
-def get_telegram_bot_key() -> str:
-    """
-    Fetches the token for the main telegram bot
-    """
-
+def get_swedish_bot_key() -> str:
     secret = GCPSecret(
-        project_id="personal-website-318015", secret_id="JIMMY_MAIN", version=2
+        project_id="personal-website-318015", secret_id="TELEGRAM_SWEDISH_BOT_KEY", version="latest"
     )
+    return get_gcp_secret(secret)
 
+
+@lru_cache(maxsize=1)
+def get_dnd_bot_key() -> str:
+    secret = GCPSecret(
+        project_id="personal-website-318015", secret_id="TELEGRAM_DND_BOT_KEY", version="latest"
+    )
+    return get_gcp_secret(secret)
+
+
+@lru_cache(maxsize=1)
+def get_minecraft_bot_key() -> str:
+    secret = GCPSecret(
+        project_id="personal-website-318015", secret_id="TELEGRAM_MINECRAFT_BOT_KEY", version="latest"
+    )
     return get_gcp_secret(secret)
 
 

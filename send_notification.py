@@ -10,12 +10,14 @@ Or import and use programmatically:
     notify("Task completed!")
 """
 import sys
-from telegram_bot.telegram_bot import send_message_to_me
+from gcp_util.secrets import get_minecraft_bot_key
+from telegram_bot.telegram_bot import TelegramBot
 
 
 def notify(message: str) -> None:
     """Send a notification message via Telegram."""
-    send_message_to_me(message)
+    bot = TelegramBot(get_minecraft_bot_key())
+    bot.send_message_to_me(message)
 
 
 if __name__ == "__main__":

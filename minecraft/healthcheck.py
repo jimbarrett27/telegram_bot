@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import socket
 import struct
 import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from telegram_bot.telegram_bot import send_message_to_me
 from util.logging_util import setup_logger
+
+if TYPE_CHECKING:
+    from telegram_bot.telegram_bot import TelegramBot
 
 logger = setup_logger(__name__)
 
@@ -145,7 +150,7 @@ def format_alert(current: HealthStatus, previous: HealthStatus) -> str:
     return "\n".join(lines)
 
 
-def run_healthcheck() -> None:
+def run_healthcheck(bot: TelegramBot) -> None:
     """Main healthcheck function called every 5 minutes to detect state changes."""
     global _previous_status
 
@@ -168,16 +173,16 @@ def run_healthcheck() -> None:
         )
         if changed:
             msg = format_alert(status, _previous_status)
-            send_message_to_me(msg)
+            bot.send_message_to_me(msg)
 
     _previous_status = status
 
 
-def run_daily_summary() -> None:
+def run_daily_summary(bot: TelegramBot) -> None:
     """Send a daily status summary."""
     status = run_all_checks()
     msg = format_summary(status)
-    send_message_to_me(msg)
+    bot.send_message_to_me(msg)
 
 
 def run_on_demand_check() -> str:

@@ -218,44 +218,44 @@ class TestRunAllChecks:
 
 
 class TestRunHealthcheck:
-    @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_first_run_no_message(self, mock_checks, mock_send):
+    def test_first_run_no_message(self, mock_checks):
+        mock_bot = MagicMock()
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
-        run_healthcheck()
-        mock_send.assert_not_called()
+        run_healthcheck(mock_bot)
+        mock_bot.send_message_to_me.assert_not_called()
 
-    @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_no_change_no_message(self, mock_checks, mock_send):
+    def test_no_change_no_message(self, mock_checks):
+        mock_bot = MagicMock()
         status = HealthStatus(True, True, True, True, True, datetime.now())
         mock_checks.return_value = status
-        run_healthcheck()  # first run
-        run_healthcheck()  # second run - no change
-        mock_send.assert_not_called()
+        run_healthcheck(mock_bot)  # first run
+        run_healthcheck(mock_bot)  # second run - no change
+        mock_bot.send_message_to_me.assert_not_called()
 
-    @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_state_change_sends_alert(self, mock_checks, mock_send):
+    def test_state_change_sends_alert(self, mock_checks):
+        mock_bot = MagicMock()
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
-        run_healthcheck()  # first run
+        run_healthcheck(mock_bot)  # first run
 
         mock_checks.return_value = HealthStatus(False, True, True, True, True, datetime.now())
-        run_healthcheck()  # state change
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][0]
+        run_healthcheck(mock_bot)  # state change
+        mock_bot.send_message_to_me.assert_called_once()
+        msg = mock_bot.send_message_to_me.call_args[0][0]
         assert "Alert" in msg
         assert "DOWN (was UP)" in msg
 
 
 class TestRunDailySummary:
-    @patch("minecraft.healthcheck.send_message_to_me")
     @patch("minecraft.healthcheck.run_all_checks")
-    def test_sends_summary(self, mock_checks, mock_send):
+    def test_sends_summary(self, mock_checks):
+        mock_bot = MagicMock()
         mock_checks.return_value = HealthStatus(True, True, True, True, True, datetime.now())
-        run_daily_summary()
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][0]
+        run_daily_summary(mock_bot)
+        mock_bot.send_message_to_me.assert_called_once()
+        msg = mock_bot.send_message_to_me.call_args[0][0]
         assert "Minecraft Server Status" in msg
 
 
