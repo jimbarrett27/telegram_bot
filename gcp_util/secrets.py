@@ -76,7 +76,7 @@ def get_photo_email_address() -> str:
 def get_photo_email_password() -> str:
     return get_gcp_secret(GCPSecret(
         project_id="personal-website-318015", secret_id="JIMMY_PHOTO_EMAIL_PASSWORD", version="latest"
-    ))
+    )).replace(" ", "")
 
 
 @lru_cache(maxsize=1)
