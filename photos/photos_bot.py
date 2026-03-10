@@ -1,6 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
+from gcp_util.secrets import get_telegram_user_id
 from photos.email_sender import send_photo_email
 from util.logging_util import setup_logger
 
@@ -8,6 +9,10 @@ logger = setup_logger(__name__)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id != get_telegram_user_id():
+        await update.message.reply_text("Unauthorised.")
+        return
+
     photo = update.message.photo[-1]  # highest resolution
     await update.message.reply_text("Sending to photo frame...")
 
