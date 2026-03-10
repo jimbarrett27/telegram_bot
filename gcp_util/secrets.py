@@ -34,28 +34,49 @@ def get_gcp_secret(gcp_secret: GCPSecret) -> str:
     return response.payload.data.decode("UTF-8")
 
 
+def _bot_key(secret_id: str) -> str:
+    return get_gcp_secret(GCPSecret(
+        project_id="personal-website-318015", secret_id=secret_id, version="latest"
+    ))
+
+
 @lru_cache(maxsize=1)
 def get_swedish_bot_key() -> str:
-    secret = GCPSecret(
-        project_id="personal-website-318015", secret_id="TELEGRAM_SWEDISH_BOT_KEY", version="latest"
-    )
-    return get_gcp_secret(secret)
+    return _bot_key("TELEGRAM_SWEDISH_BOT_KEY")
 
 
 @lru_cache(maxsize=1)
 def get_dnd_bot_key() -> str:
-    secret = GCPSecret(
-        project_id="personal-website-318015", secret_id="TELEGRAM_DND_BOT_KEY", version="latest"
-    )
-    return get_gcp_secret(secret)
+    return _bot_key("TELEGRAM_DND_BOT_KEY")
 
 
 @lru_cache(maxsize=1)
 def get_minecraft_bot_key() -> str:
-    secret = GCPSecret(
-        project_id="personal-website-318015", secret_id="TELEGRAM_MINECRAFT_BOT_KEY", version="latest"
-    )
-    return get_gcp_secret(secret)
+    return _bot_key("TELEGRAM_MINECRAFT_BOT_KEY")
+
+
+@lru_cache(maxsize=1)
+def get_diary_bot_key() -> str:
+    return _bot_key("TELEGRAM_DIARY_BOT_KEY")
+
+
+@lru_cache(maxsize=1)
+def get_photos_bot_key() -> str:
+    return _bot_key("TELEGRAM_PHOTOS_BOT_KEY")
+
+
+@lru_cache(maxsize=1)
+def get_photo_email_address() -> str:
+    return get_gcp_secret(GCPSecret(
+        project_id="personal-website-318015", secret_id="JIMMY_PHOTO_EMAIL_ADDRESS", version="latest"
+    ))
+
+
+@lru_cache(maxsize=1)
+def get_photo_email_password() -> str:
+    return get_gcp_secret(GCPSecret(
+        project_id="personal-website-318015", secret_id="JIMMY_PHOTO_EMAIL_PASSWORD", version="latest"
+    ))
 
 
 @lru_cache(maxsize=1)
