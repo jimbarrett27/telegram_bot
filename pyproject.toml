@@ -19,6 +19,7 @@ dependencies = [
     "html2text>=2025.4.15",
     "pyyaml>=6.0.0",
     "pymupdf>=1.24.0",
+    "google-cloud-storage>=3.9.0",
 ]
 
 [project.optional-dependencies]

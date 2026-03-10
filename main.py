@@ -11,10 +11,11 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from gcp_util.secrets import get_swedish_bot_key, get_minecraft_bot_key, get_photos_bot_key
+from gcp_util.secrets import get_swedish_bot_key, get_minecraft_bot_key, get_photos_bot_key, get_diary_bot_key
 from swedish.database import init_db as init_swedish_db, populate_db
 from swedish import swedish_bot
 from photos.photos_bot import get_handlers as get_photo_handlers
+from diary.diary_bot import get_handlers as get_diary_handlers, schedule_jobs as schedule_diary_jobs
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
 from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
 from telegram_bot.telegram_bot import TelegramBot
@@ -132,6 +133,17 @@ def build_swedish_app() -> Application:
     return app
 
 
+def build_diary_app() -> Application:
+    app = Application.builder().token(get_diary_bot_key()).build()
+    for handler in get_diary_handlers():
+        app.add_handler(handler)
+    if app.job_queue:
+        schedule_diary_jobs(app.job_queue)
+    else:
+        logger.warning("JobQueue not available - diary prompts disabled.")
+    return app
+
+
 def build_photos_app() -> Application:
     app = Application.builder().token(get_photos_bot_key()).build()
     for handler in get_photo_handlers():
@@ -161,14 +173,17 @@ async def run():
     swedish_app = build_swedish_app()
     minecraft_app = build_minecraft_app()
     photos_app = build_photos_app()
+    diary_app = build_diary_app()
 
-    async with swedish_app, minecraft_app, photos_app:
+    async with swedish_app, minecraft_app, photos_app, diary_app:
         await swedish_app.start()
         await swedish_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await minecraft_app.start()
         await minecraft_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await photos_app.start()
         await photos_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await diary_app.start()
+        await diary_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
         logger.info("All bots are running.")
         print("All bots are running...")
@@ -187,6 +202,8 @@ async def run():
         await minecraft_app.stop()
         await photos_app.updater.stop()
         await photos_app.stop()
+        await diary_app.updater.stop()
+        await diary_app.stop()
 
 
 def main():
