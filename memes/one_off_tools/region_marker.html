@@ -53,7 +53,7 @@
   <input type="file" id="file-input" accept="image/*">
   <input type="text" id="template-name" placeholder="Template name (e.g. drake)"
          style="background:#16213e; border:1px solid #0f3460; color:#eee; padding:8px; border-radius:4px; width:200px;">
-  <button id="btn-export">Export JSON</button>
+  <button id="btn-export">Export Python</button>
   <button id="btn-clear">Clear All</button>
 </div>
 
@@ -68,9 +68,9 @@
 </div>
 
 <div style="margin-top: 16px;">
-  <strong>JSON Output:</strong>
+  <strong>Python Output:</strong>
   <textarea id="json-output" readonly></textarea>
-  <p class="hint">Copy this into your templates metadata file.</p>
+  <p class="hint">Copy this into memes/tools.py as a new tool function.</p>
 </div>
 
 <script>
@@ -246,17 +246,23 @@ function renderRegionList() {
 
 function updateJson() {
   const name = templateNameInput.value || 'unnamed';
-  const output = {
-    [name]: {
-      image: `${name}.jpg`,
-      text_boxes: regions.map(r => {
-        const box = { label: r.label, x: r.x, y: r.y, width: r.width, height: r.height };
-        if (r.rotation) box.rotation = r.rotation;
-        return box;
-      }),
-    },
-  };
-  jsonOutput.value = JSON.stringify(output, null, 2);
+  const labels = regions.map(r => r.label);
+  const params = labels.join(': str, ') + ': str';
+  const textBoxLines = regions.map(r => {
+    const rot = r.rotation ? `, rotation=${r.rotation}` : '';
+    return `            TextBox("${r.label}", ${r.x}, ${r.y}, ${r.width}, ${r.height}${rot}),`;
+  }).join('\n');
+  const dictEntries = labels.map(l => `"${l}": ${l}`).join(', ');
+
+  jsonOutput.value = `@tool
+def ${name}(${params}) -> str:
+    """TODO: describe this template."""
+    return _render(
+        Template("${name}.png", [
+${textBoxLines}
+        ]),
+        {${dictEntries}},
+    )`;
 }
 
 templateNameInput.addEventListener('input', updateJson);
