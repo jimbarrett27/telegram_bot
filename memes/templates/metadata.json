@@ -1,1 +1,243 @@
-{}
+{
+  "epic_handshake": {
+    "image": "epic_handshake.png",
+    "description": "Two people firmly shaking hands, agreeing on something. The left and right arms are two different groups/people, and the handshake is what they unexpectedly agree on.",
+    "text_boxes": [
+      {
+        "label": "left_arm",
+        "x": 28,
+        "y": 234,
+        "width": 261,
+        "height": 128,
+        "rotation": 47
+      },
+      {
+        "label": "right_arm",
+        "x": 347,
+        "y": 223,
+        "width": 293,
+        "height": 129,
+        "rotation": -36
+      },
+      {
+        "label": "handshake",
+        "x": 170,
+        "y": 25,
+        "width": 243,
+        "height": 118
+      }
+    ]
+  },
+  "woman_yelling_at_cat": {
+    "image": "woman_yelling_at_cat.png",
+    "description": "A woman angrily yelling/pointing at a confused cat sitting at a dinner table. The woman represents someone making an emotional accusation, and the cat represents the unbothered target of the accusation.",
+    "text_boxes": [
+      {
+        "label": "woman",
+        "x": 4,
+        "y": 21,
+        "width": 329,
+        "height": 70
+      },
+      {
+        "label": "cat",
+        "x": 348,
+        "y": 20,
+        "width": 319,
+        "height": 66
+      }
+    ]
+  },
+  "distracted_boyfriend": {
+    "image": "distracted_boyfriend.png",
+    "description": "A man turns to check out another woman while his girlfriend looks on disapprovingly. The man is being tempted by something new (other_woman) while neglecting what he already has (girlfriend).",
+    "text_boxes": [
+      {
+        "label": "other_woman",
+        "x": 72,
+        "y": 317,
+        "width": 265,
+        "height": 113
+      },
+      {
+        "label": "man",
+        "x": 357,
+        "y": 212,
+        "width": 204,
+        "height": 98
+      },
+      {
+        "label": "girlfriend",
+        "x": 548,
+        "y": 327,
+        "width": 191,
+        "height": 89
+      }
+    ]
+  },
+  "always_has_been": {
+    "image": "always_has_been.png",
+    "description": "Two astronauts in space looking at Earth. One makes a surprising statement about what they see, and the other points a gun saying 'always has been' — revealing something was always true.",
+    "text_boxes": [
+      {
+        "label": "statement",
+        "x": 241,
+        "y": 163,
+        "width": 311,
+        "height": 48
+      },
+      {
+        "label": "always_has_been",
+        "x": 606,
+        "y": 6,
+        "width": 274,
+        "height": 48
+      }
+    ]
+  },
+  "the_same_picture": {
+    "image": "the_same_picture.png",
+    "description": "Corporate needs you to find the difference between these two pictures — they're the same picture. Used when two supposedly different things are actually identical.",
+    "text_boxes": [
+      {
+        "label": "left_picture",
+        "x": 51,
+        "y": 27,
+        "width": 156,
+        "height": 134,
+        "rotation": 13
+      },
+      {
+        "label": "right_picture",
+        "x": 282,
+        "y": 64,
+        "width": 204,
+        "height": 145,
+        "rotation": 17
+      }
+    ]
+  },
+  "is_this_a": {
+    "image": "is_this_a.png",
+    "description": "A man (labelled as someone clueless) looks at a butterfly (labelled as something misidentified) and asks 'is this a ___?' — used for comically wrong identification or misunderstanding.",
+    "text_boxes": [
+      {
+        "label": "guy",
+        "x": 22,
+        "y": 11,
+        "width": 277,
+        "height": 90
+      },
+      {
+        "label": "butterfly",
+        "x": 339,
+        "y": 159,
+        "width": 207,
+        "height": 97
+      },
+      {
+        "label": "bottom_text",
+        "x": 5,
+        "y": 401,
+        "width": 542,
+        "height": 75
+      }
+    ]
+  },
+  "change_my_mind": {
+    "image": "change_my_mind.png",
+    "description": "A man sits at a table with a sign displaying a bold/controversial opinion, daring people to 'change my mind'. Used for hot takes and strong opinions.",
+    "text_boxes": [
+      {
+        "label": "statement",
+        "x": 240,
+        "y": 255,
+        "width": 264,
+        "height": 115,
+        "rotation": -8
+      }
+    ]
+  },
+  "grus_plan": {
+    "image": "grus_plan.png",
+    "description": "Gru from Despicable Me presents a plan on a whiteboard in 4 panels. The first two steps seem reasonable, but the third reveals an unintended consequence, and in the fourth panel Gru reacts in horror realising the flaw. The bottom two panels should have the same text — the unexpected bad outcome.",
+    "text_boxes": [
+      {
+        "label": "top_left",
+        "x": 206,
+        "y": 49,
+        "width": 117,
+        "height": 166
+      },
+      {
+        "label": "top_right",
+        "x": 557,
+        "y": 53,
+        "width": 118,
+        "height": 158
+      },
+      {
+        "label": "bottom_left",
+        "x": 208,
+        "y": 284,
+        "width": 122,
+        "height": 160
+      },
+      {
+        "label": "bottom_right",
+        "x": 557,
+        "y": 285,
+        "width": 117,
+        "height": 149
+      }
+    ]
+  },
+  "off_ramp": {
+    "image": "off_ramp.png",
+    "description": "A car swerves off the highway at the last second to take an exit. 'straight_ahead' is the sensible/expected choice, 'exit' is the tempting alternative, and 'car' is who is making the bad decision.",
+    "text_boxes": [
+      {
+        "label": "straight_ahead",
+        "x": 123,
+        "y": 61,
+        "width": 71,
+        "height": 98
+      },
+      {
+        "label": "exit",
+        "x": 273,
+        "y": 65,
+        "width": 99,
+        "height": 94
+      },
+      {
+        "label": "car",
+        "x": 159,
+        "y": 366,
+        "width": 217,
+        "height": 49,
+        "rotation": -11
+      }
+    ]
+  },
+  "drake": {
+    "image": "drake.png",
+    "description": "Drake disapproves of the top text (something bad/boring) and enthusiastically approves of the bottom text (something better/funnier).",
+    "text_boxes": [
+      {
+        "label": "top",
+        "x": 256,
+        "y": 8,
+        "width": 228,
+        "height": 211
+      },
+      {
+        "label": "bottom",
+        "x": 264,
+        "y": 264,
+        "width": 218,
+        "height": 215
+      }
+    ]
+  }
+}

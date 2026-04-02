@@ -76,12 +76,12 @@ def _draw_outlined_text(
     draw.text((x, y), text, font=font, fill=fill)
 
 
-def render_meme(template_name: str, texts: list[str]) -> bytes:
-    """Render a meme from a template name and list of text strings.
+def render_meme(template_name: str, texts: dict[str, str]) -> bytes:
+    """Render a meme from a template name and a dict of label->text.
 
     Args:
         template_name: Key in metadata.json (e.g. "drake")
-        texts: List of text strings, one per text_box defined in metadata
+        texts: Dict mapping text box labels to text strings (e.g. {"top": "Hello", "bottom": "World"})
 
     Returns:
         PNG image bytes
@@ -93,35 +93,66 @@ def render_meme(template_name: str, texts: list[str]) -> bytes:
 
     template = metadata[template_name]
     text_boxes = template["text_boxes"]
+    box_labels = {box["label"] for box in text_boxes}
 
-    if len(texts) > len(text_boxes):
+    unknown = set(texts.keys()) - box_labels
+    if unknown:
         raise ValueError(
-            f"Template '{template_name}' has {len(text_boxes)} text boxes "
-            f"but got {len(texts)} texts"
+            f"Unknown label(s) {unknown} for template '{template_name}'. "
+            f"Available: {box_labels}"
         )
 
     img_path = TEMPLATES_DIR / template["image"]
     img = Image.open(img_path).convert("RGBA")
     draw = ImageDraw.Draw(img)
 
-    for text, box in zip(texts, text_boxes):
+    for box in text_boxes:
+        if box["label"] not in texts:
+            continue
+        text = texts[box["label"]]
         bx, by, bw, bh = box["x"], box["y"], box["width"], box["height"]
+        rotation = box.get("rotation", 0)
         padding = 8
-        font, lines = _fit_text(
-            draw, text.upper(), FONT_PATH, bw - padding * 2, bh - padding * 2
-        )
 
-        line_height = font.size * 1.2
-        total_text_height = line_height * len(lines)
-        # Center text vertically in the box
-        y_offset = by + (bh - total_text_height) / 2
+        if rotation:
+            # Render text onto a temporary image, rotate, then paste
+            text_img = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+            text_draw = ImageDraw.Draw(text_img)
+            font, lines = _fit_text(
+                text_draw, text.upper(), FONT_PATH, bw - padding * 2, bh - padding * 2
+            )
 
-        for line in lines:
-            line_width = draw.textlength(line, font=font)
-            # Center text horizontally in the box
-            x_offset = bx + (bw - line_width) / 2
-            _draw_outlined_text(draw, x_offset, y_offset, line, font)
-            y_offset += line_height
+            line_height = font.size * 1.2
+            total_text_height = line_height * len(lines)
+            y_off = (bh - total_text_height) / 2
+
+            for line in lines:
+                line_width = text_draw.textlength(line, font=font)
+                x_off = (bw - line_width) / 2
+                _draw_outlined_text(text_draw, x_off, y_off, line, font)
+                y_off += line_height
+
+            rotated = text_img.rotate(-rotation, expand=True, resample=Image.BICUBIC)
+            # Center the rotated image on the original box center
+            cx = bx + bw // 2
+            cy = by + bh // 2
+            paste_x = cx - rotated.width // 2
+            paste_y = cy - rotated.height // 2
+            img.paste(rotated, (paste_x, paste_y), rotated)
+        else:
+            font, lines = _fit_text(
+                draw, text.upper(), FONT_PATH, bw - padding * 2, bh - padding * 2
+            )
+
+            line_height = font.size * 1.2
+            total_text_height = line_height * len(lines)
+            y_offset = by + (bh - total_text_height) / 2
+
+            for line in lines:
+                line_width = draw.textlength(line, font=font)
+                x_offset = bx + (bw - line_width) / 2
+                _draw_outlined_text(draw, x_offset, y_offset, line, font)
+                y_offset += line_height
 
     # Convert to RGB for PNG output
     output = Image.new("RGB", img.size, (0, 0, 0))

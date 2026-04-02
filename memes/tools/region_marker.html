@@ -30,6 +30,10 @@
     padding: 2px 6px; border-radius: 3px; width: 120px; margin-right: 8px;
   }
   .region-list li .coords { font-size: 0.8em; color: #aaa; font-family: monospace; }
+  .region-list li .rotation-input {
+    background: transparent; border: 1px solid #555; color: #eee;
+    padding: 2px 6px; border-radius: 3px; width: 60px; margin-left: 8px;
+  }
   .region-list li button { background: #e94560; border: none; color: #fff; padding: 4px 10px; border-radius: 3px; cursor: pointer; }
 
   textarea {
@@ -147,6 +151,7 @@ canvas.addEventListener('mouseup', () => {
       y: Math.round(currentRect.y / scale),
       width: Math.round(currentRect.w / scale),
       height: Math.round(currentRect.h / scale),
+      rotation: 0,
     });
     renderRegionList();
   }
@@ -171,16 +176,28 @@ function redraw() {
   const colors = ['#e94560', '#0f3460', '#7ee787', '#f5a623', '#bd93f9', '#ff79c6', '#8be9fd'];
   regions.forEach((r, i) => {
     const c = colors[i % colors.length];
+    const cx = (r.x + r.width / 2) * scale;
+    const cy = (r.y + r.height / 2) * scale;
+    const w = r.width * scale;
+    const h = r.height * scale;
+    const angle = (r.rotation || 0) * Math.PI / 180;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
     ctx.strokeStyle = c;
     ctx.lineWidth = 2;
-    ctx.strokeRect(r.x * scale, r.y * scale, r.width * scale, r.height * scale);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
     ctx.fillStyle = c + '33';
-    ctx.fillRect(r.x * scale, r.y * scale, r.width * scale, r.height * scale);
+    ctx.fillRect(-w / 2, -h / 2, w, h);
     // Label
     ctx.fillStyle = c;
     ctx.font = 'bold 14px system-ui';
     ctx.textAlign = 'left';
-    ctx.fillText(r.label, r.x * scale + 4, r.y * scale + 16);
+    ctx.fillText(r.label, -w / 2 + 4, -h / 2 + 16);
+
+    ctx.restore();
   });
 
   // Draw current rectangle being drawn
@@ -201,11 +218,19 @@ function renderRegionList() {
       <div>
         <input class="label-input" value="${r.label}" data-idx="${i}">
         <span class="coords">(${r.x}, ${r.y}) ${r.width}×${r.height}</span>
+        <label style="margin-left:8px; font-size:0.8em; color:#aaa;">rot:
+          <input class="rotation-input" type="number" value="${r.rotation || 0}" data-idx="${i}" step="1">°
+        </label>
       </div>
       <button data-idx="${i}">Delete</button>
     `;
     li.querySelector('.label-input').addEventListener('input', (e) => {
       regions[e.target.dataset.idx].label = e.target.value;
+      redraw();
+      updateJson();
+    });
+    li.querySelector('.rotation-input').addEventListener('input', (e) => {
+      regions[e.target.dataset.idx].rotation = parseFloat(e.target.value) || 0;
       redraw();
       updateJson();
     });
@@ -224,13 +249,11 @@ function updateJson() {
   const output = {
     [name]: {
       image: `${name}.jpg`,
-      text_boxes: regions.map(r => ({
-        label: r.label,
-        x: r.x,
-        y: r.y,
-        width: r.width,
-        height: r.height,
-      })),
+      text_boxes: regions.map(r => {
+        const box = { label: r.label, x: r.x, y: r.y, width: r.width, height: r.height };
+        if (r.rotation) box.rotation = r.rotation;
+        return box;
+      }),
     },
   };
   jsonOutput.value = JSON.stringify(output, null, 2);
