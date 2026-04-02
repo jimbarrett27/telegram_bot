@@ -77,7 +77,7 @@
   },
   "always_has_been": {
     "image": "always_has_been.png",
-    "description": "Two astronauts in space looking at Earth. One makes a surprising statement about what they see, and the other points a gun saying 'always has been' — revealing something was always true.",
+    "description": "Two astronauts in space looking at Earth. One makes a surprising statement about what they see, and the other points a gun saying 'always has been' — revealing something was always true. The always_has_been text should almost always literally say \"Always has been\", although similar phrases are sometimes appropriate as wordplay.",
     "text_boxes": [
       {
         "label": "statement",
@@ -97,7 +97,7 @@
   },
   "the_same_picture": {
     "image": "the_same_picture.png",
-    "description": "Corporate needs you to find the difference between these two pictures — they're the same picture. Used when two supposedly different things are actually identical.",
+    "description": "Corporate needs you to find the difference between these two pictures — they're the same picture. Used when two supposedly different things are actually identical. Can also be used to signify when two obviously non equivalent things have been declared to not be equivalent by mistake.",
     "text_boxes": [
       {
         "label": "left_picture",
@@ -146,7 +146,7 @@
   },
   "change_my_mind": {
     "image": "change_my_mind.png",
-    "description": "A man sits at a table with a sign displaying a bold/controversial opinion, daring people to 'change my mind'. Used for hot takes and strong opinions.",
+    "description": "A man sits at a table with a sign displaying a bold/controversial opinion, daring people to 'change my mind'. Used for hot takes and strong opinions, especially when those opinions are unjustifiably strong.",
     "text_boxes": [
       {
         "label": "statement",
