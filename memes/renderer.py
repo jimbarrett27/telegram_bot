@@ -1,7 +1,6 @@
 """Core meme rendering - draws text onto meme templates."""
 
 import json
-import textwrap
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -17,6 +16,37 @@ def load_metadata() -> dict:
         return json.load(f)
 
 
+def _wrap_text_by_width(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+) -> list[str]:
+    """Word-wrap text based on actual measured pixel width, not character count."""
+    lines: list[str] = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        current_line = words[0]
+        for word in words[1:]:
+            candidate = current_line + " " + word
+            if draw.textlength(candidate, font=font) <= max_width:
+                current_line = candidate
+            else:
+                lines.append(current_line)
+                current_line = word
+        lines.append(current_line)
+    return lines
+
+
+def _get_line_height(font: ImageFont.FreeTypeFont) -> float:
+    """Get line height from actual font metrics."""
+    ascent, descent = font.getmetrics()
+    return (ascent + descent) * 1.15
+
+
 def _fit_text(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -25,35 +55,27 @@ def _fit_text(
     box_height: int,
     max_font_size: int = 80,
     min_font_size: int = 16,
+    max_lines: int = 4,
 ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
     """Find the largest font size that fits the text in the box, with word wrapping."""
     for size in range(max_font_size, min_font_size - 1, -2):
         font = ImageFont.truetype(str(font_path), size)
-        # Estimate characters per line from average char width
-        avg_char_width = font.getlength("A")
-        chars_per_line = max(1, int(box_width / avg_char_width))
-        lines = []
-        for paragraph in text.split("\n"):
-            lines.extend(textwrap.wrap(paragraph, width=chars_per_line) or [""])
+        lines = _wrap_text_by_width(draw, text, font, box_width)
 
-        # Check if all lines fit vertically
-        line_height = size * 1.2
+        if len(lines) > max_lines:
+            continue
+
+        line_height = _get_line_height(font)
         total_height = line_height * len(lines)
         if total_height > box_height:
             continue
 
-        # Check if all lines fit horizontally
-        fits = all(draw.textlength(line, font=font) <= box_width for line in lines)
-        if fits:
+        if all(draw.textlength(line, font=font) <= box_width for line in lines):
             return font, lines
 
     # Fall back to minimum size
     font = ImageFont.truetype(str(font_path), min_font_size)
-    avg_char_width = font.getlength("A")
-    chars_per_line = max(1, int(box_width / avg_char_width))
-    lines = []
-    for paragraph in text.split("\n"):
-        lines.extend(textwrap.wrap(paragraph, width=chars_per_line) or [""])
+    lines = _wrap_text_by_width(draw, text, font, box_width)
     return font, lines
 
 
@@ -65,9 +87,11 @@ def _draw_outlined_text(
     font: ImageFont.FreeTypeFont,
     fill: str = "white",
     outline: str = "black",
-    outline_width: int = 3,
+    outline_width: int | None = None,
 ):
     """Draw text with an outline (the classic meme look)."""
+    if outline_width is None:
+        outline_width = max(1, font.size // 20)
     for dx in range(-outline_width, outline_width + 1):
         for dy in range(-outline_width, outline_width + 1):
             if dx == 0 and dy == 0:
@@ -122,7 +146,7 @@ def render_meme(template_name: str, texts: dict[str, str]) -> bytes:
                 text_draw, text.upper(), FONT_PATH, bw - padding * 2, bh - padding * 2
             )
 
-            line_height = font.size * 1.2
+            line_height = _get_line_height(font)
             total_text_height = line_height * len(lines)
             y_off = (bh - total_text_height) / 2
 
@@ -144,7 +168,7 @@ def render_meme(template_name: str, texts: dict[str, str]) -> bytes:
                 draw, text.upper(), FONT_PATH, bw - padding * 2, bh - padding * 2
             )
 
-            line_height = font.size * 1.2
+            line_height = _get_line_height(font)
             total_text_height = line_height * len(lines)
             y_offset = by + (bh - total_text_height) / 2
 
