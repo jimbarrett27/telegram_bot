@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Meme Region Marker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+  h1 { margin-bottom: 10px; font-size: 1.4em; }
+
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .controls button, .controls label {
+    background: #16213e; border: 1px solid #0f3460; color: #eee;
+    padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+  }
+  .controls button:hover { background: #0f3460; }
+  .controls input[type="file"] { display: none; }
+
+  .workspace { position: relative; display: inline-block; background: #111; border: 2px solid #333; }
+  .workspace canvas { display: block; cursor: crosshair; }
+
+  .sidebar { margin-top: 16px; }
+  .region-list { list-style: none; margin-top: 8px; }
+  .region-list li {
+    background: #16213e; border: 1px solid #0f3460; border-radius: 4px;
+    padding: 8px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .region-list li .label-input {
+    background: transparent; border: 1px solid #555; color: #eee;
+    padding: 2px 6px; border-radius: 3px; width: 120px; margin-right: 8px;
+  }
+  .region-list li .coords { font-size: 0.8em; color: #aaa; font-family: monospace; }
+  .region-list li button { background: #e94560; border: none; color: #fff; padding: 4px 10px; border-radius: 3px; cursor: pointer; }
+
+  textarea {
+    width: 100%; max-width: 700px; height: 250px; margin-top: 10px;
+    background: #0d1117; color: #7ee787; border: 1px solid #333; border-radius: 4px;
+    padding: 10px; font-family: monospace; font-size: 0.85em;
+  }
+  .hint { color: #888; font-size: 0.85em; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Meme Template Region Marker</h1>
+
+<div class="controls">
+  <label for="file-input">Load Image</label>
+  <input type="file" id="file-input" accept="image/*">
+  <input type="text" id="template-name" placeholder="Template name (e.g. drake)"
+         style="background:#16213e; border:1px solid #0f3460; color:#eee; padding:8px; border-radius:4px; width:200px;">
+  <button id="btn-export">Export JSON</button>
+  <button id="btn-clear">Clear All</button>
+</div>
+
+<div class="workspace">
+  <canvas id="canvas" width="800" height="600"></canvas>
+</div>
+
+<div class="sidebar">
+  <strong>Regions:</strong>
+  <p class="hint">Click and drag on the image to define text regions. Give each a label.</p>
+  <ul class="region-list" id="region-list"></ul>
+</div>
+
+<div style="margin-top: 16px;">
+  <strong>JSON Output:</strong>
+  <textarea id="json-output" readonly></textarea>
+  <p class="hint">Copy this into your templates metadata file.</p>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const fileInput = document.getElementById('file-input');
+const regionListEl = document.getElementById('region-list');
+const jsonOutput = document.getElementById('json-output');
+const templateNameInput = document.getElementById('template-name');
+
+let img = null;
+let regions = [];
+let drawing = false;
+let startX = 0, startY = 0;
+let currentRect = null;
+let scale = 1;
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const image = new Image();
+    image.onload = () => {
+      img = image;
+      // Scale to fit max 900px wide
+      const maxW = 900;
+      if (img.width > maxW) {
+        scale = maxW / img.width;
+      } else {
+        scale = 1;
+      }
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      regions = [];
+      renderRegionList();
+      redraw();
+    };
+    image.src = ev.target.result;
+
+    // Auto-fill template name from filename
+    const name = file.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (!templateNameInput.value) templateNameInput.value = name;
+  };
+  reader.readAsDataURL(file);
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  if (!img) return;
+  drawing = true;
+  const rect = canvas.getBoundingClientRect();
+  startX = e.clientX - rect.left;
+  startY = e.clientY - rect.top;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!drawing) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  currentRect = {
+    x: Math.min(startX, mx),
+    y: Math.min(startY, my),
+    w: Math.abs(mx - startX),
+    h: Math.abs(my - startY),
+  };
+  redraw();
+});
+
+canvas.addEventListener('mouseup', () => {
+  if (!drawing) return;
+  drawing = false;
+  if (currentRect && currentRect.w > 5 && currentRect.h > 5) {
+    // Convert back to original image coordinates
+    regions.push({
+      label: `text_${regions.length}`,
+      x: Math.round(currentRect.x / scale),
+      y: Math.round(currentRect.y / scale),
+      width: Math.round(currentRect.w / scale),
+      height: Math.round(currentRect.h / scale),
+    });
+    renderRegionList();
+  }
+  currentRect = null;
+  redraw();
+});
+
+function redraw() {
+  if (!img) {
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#666';
+    ctx.font = '18px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load an image to get started', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  // Draw existing regions
+  const colors = ['#e94560', '#0f3460', '#7ee787', '#f5a623', '#bd93f9', '#ff79c6', '#8be9fd'];
+  regions.forEach((r, i) => {
+    const c = colors[i % colors.length];
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(r.x * scale, r.y * scale, r.width * scale, r.height * scale);
+    ctx.fillStyle = c + '33';
+    ctx.fillRect(r.x * scale, r.y * scale, r.width * scale, r.height * scale);
+    // Label
+    ctx.fillStyle = c;
+    ctx.font = 'bold 14px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText(r.label, r.x * scale + 4, r.y * scale + 16);
+  });
+
+  // Draw current rectangle being drawn
+  if (currentRect) {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h);
+    ctx.setLineDash([]);
+  }
+}
+
+function renderRegionList() {
+  regionListEl.innerHTML = '';
+  regions.forEach((r, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div>
+        <input class="label-input" value="${r.label}" data-idx="${i}">
+        <span class="coords">(${r.x}, ${r.y}) ${r.width}×${r.height}</span>
+      </div>
+      <button data-idx="${i}">Delete</button>
+    `;
+    li.querySelector('.label-input').addEventListener('input', (e) => {
+      regions[e.target.dataset.idx].label = e.target.value;
+      redraw();
+      updateJson();
+    });
+    li.querySelector('button').addEventListener('click', (e) => {
+      regions.splice(e.target.dataset.idx, 1);
+      renderRegionList();
+      redraw();
+    });
+    regionListEl.appendChild(li);
+  });
+  updateJson();
+}
+
+function updateJson() {
+  const name = templateNameInput.value || 'unnamed';
+  const output = {
+    [name]: {
+      image: `${name}.jpg`,
+      text_boxes: regions.map(r => ({
+        label: r.label,
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+      })),
+    },
+  };
+  jsonOutput.value = JSON.stringify(output, null, 2);
+}
+
+templateNameInput.addEventListener('input', updateJson);
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  jsonOutput.select();
+  navigator.clipboard.writeText(jsonOutput.value).then(() => {
+    alert('Copied to clipboard!');
+  }).catch(() => {
+    // fallback — already selected for manual copy
+  });
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  regions = [];
+  renderRegionList();
+  redraw();
+});
+
+// Initial draw
+redraw();
+</script>
+</body>
+</html>
