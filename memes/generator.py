@@ -27,25 +27,38 @@ def generate_meme(
     prompt: str,
     model: str = DEFAULT_MODEL,
     provider: str = "openrouter",
-) -> tuple[bytes, str]:
+    exclude_templates: list[str] | None = None,
+) -> tuple[bytes, str, str]:
     """Generate a meme from a text prompt.
 
     Returns:
-        (png_bytes, template_name) tuple.
+        (png_bytes, template_name, agent_text) tuple.
     """
     meme_tools.last_render = None
+
+    tools = meme_tools.ALL_TOOLS
+    if exclude_templates:
+        tools = [t for t in tools if t.name not in exclude_templates]
 
     llm = get_llm(provider=provider, model=model, temperature=1.0)
     agent = Agent(
         name="meme_generator",
         system_prompt=SYSTEM_PROMPT,
-        tools=meme_tools.ALL_TOOLS,
+        tools=tools,
         llm=llm,
     )
 
-    agent.invoke([HumanMessage(content=prompt)])
+    result = agent.invoke([HumanMessage(content=prompt)])
 
     if meme_tools.last_render is None:
         raise RuntimeError("Agent did not produce a meme — no tool was called")
 
-    return meme_tools.last_render
+    # Extract final text response from the agent
+    agent_text = ""
+    for msg in reversed(result["messages"]):
+        if msg.type == "ai" and msg.content:
+            from agents.utils import content_to_str
+            agent_text = content_to_str(msg.content)
+            break
+
+    return (*meme_tools.last_render, agent_text)

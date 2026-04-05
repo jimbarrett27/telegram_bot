@@ -61,6 +61,11 @@ def get_diary_bot_key() -> str:
 
 
 @lru_cache(maxsize=1)
+def get_memes_bot_key() -> str:
+    return _bot_key("TELEGRAM_MEMES_BOT_KEY")
+
+
+@lru_cache(maxsize=1)
 def get_photos_bot_key() -> str:
     return _bot_key("TELEGRAM_PHOTOS_BOT_KEY")
 
