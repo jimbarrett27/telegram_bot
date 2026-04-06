@@ -137,14 +137,3 @@ def get_openrouter_api_key() -> str:
     return get_gcp_secret(secret)
 
 
-@lru_cache(maxsize=1)
-def get_gemini_api_key() -> str:
-    """
-    Fetches the API key for the Gemini API
-    """
-
-    secret = GCPSecret(
-        project_id="personal-website-318015", secret_id="GEMINI_API_KEY", version=1
-    )
-
-    return get_gcp_secret(secret)

@@ -48,7 +48,13 @@ def create_game(chat_id: int) -> Game:
         return game
 
 
-def add_player(game_id: int, user_id: int, display_name: str) -> tuple[Player, bool]:
+def add_player(
+    game_id: int,
+    user_id: int,
+    display_name: str,
+    character_class: Optional[str] = None,
+    character_description: Optional[str] = None,
+) -> tuple[Player, bool]:
     """Add a player. Returns (player, is_new). If already joined, returns existing."""
     with get_session() as session:
         existing = session.execute(
@@ -67,6 +73,8 @@ def add_player(game_id: int, user_id: int, display_name: str) -> tuple[Player, b
             game_id=game_id,
             user_id=user_id,
             display_name=display_name,
+            character_class=character_class,
+            character_description=character_description,
             join_order=next_order,
         )
         session.add(player)
@@ -139,6 +147,12 @@ def submit_action(round_id: int, player_id: int, text: str) -> Action:
         session.flush()
         session.expunge(action)
         return action
+
+
+def set_action_outcome(action_id: int, outcome: str) -> None:
+    with get_session() as session:
+        action = session.get(Action, action_id)
+        action.outcome = outcome
 
 
 def get_actions_for_round(round_id: int) -> list[Action]:

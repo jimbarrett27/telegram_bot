@@ -111,7 +111,6 @@ async def _turn_timeout_callback(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id, f"⏰ {name} took too long and was skipped.")
 
     if result.round_complete:
-        await context.bot.send_message(chat_id, f"📖 {result.resolution}")
         await context.bot.send_message(chat_id, f"📖 {result.new_narrative}")
         if result.next_player:
             await context.bot.send_message(
@@ -260,25 +259,25 @@ async def handle_action_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         result = await game_manager.submit_action(chat_id, user_id, action_text)
 
+        # Always show the outcome of this action
+        if result.outcome:
+            await update.message.reply_text(f"📖 {result.outcome}")
+
         if result.round_complete:
             await update.message.reply_text(
-                f"📖 {result.resolution}",
+                f"📖 {result.new_narrative}",
                 reply_markup=get_keyboard(chat_id, user_id),
             )
-            await update.message.reply_text(f"📖 {result.new_narrative}")
             if result.next_player:
                 await update.message.reply_text(
                     f"⚔️ {result.next_player.display_name}, it's your turn!",
                 )
                 _schedule_turn_timeout(context, chat_id, result.next_player.id)
         else:
-            await update.message.reply_text(
-                f"✅ Action submitted!",
-                reply_markup=get_keyboard(chat_id, user_id),
-            )
             if result.next_player:
                 await update.message.reply_text(
                     f"⚔️ {result.next_player.display_name}, it's your turn!",
+                    reply_markup=get_keyboard(chat_id, user_id),
                 )
                 _schedule_turn_timeout(context, chat_id, result.next_player.id)
 

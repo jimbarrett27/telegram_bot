@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from dnd import database as db
+from dnd.dice import RollResult
 from dnd.models import Game, Player, Round, GAME_LOBBY, GAME_ACTIVE
 from dnd.turn_policy import TurnPolicy, RoundRobinPolicy
-from dnd.narrator import Narrator
+from dnd.narrator import Narrator, PlayerContext, ResolvedAction
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
@@ -40,9 +41,19 @@ class NotEnoughPlayers(Exception):
 class ActionResult:
     accepted: bool
     round_complete: bool
-    resolution: Optional[str] = None
+    outcome: Optional[str] = None        # Narration for this specific action
+    roll: Optional[RollResult] = None    # Dice roll if a skill check was made
+    resolution: Optional[str] = None     # Combined outcomes when round completes
     new_narrative: Optional[str] = None
     next_player: Optional[Player] = None
+
+
+def _player_context(player: Player) -> PlayerContext:
+    return PlayerContext(
+        name=player.display_name,
+        character_class=player.character_class or "Adventurer",
+        character_description=player.character_description,
+    )
 
 
 class GameManager:
@@ -53,13 +64,26 @@ class GameManager:
     def create_game(self, chat_id: int) -> Game:
         return db.create_game(chat_id)
 
-    def join_game(self, chat_id: int, user_id: int, display_name: str) -> tuple[Player, bool]:
+    def join_game(
+        self,
+        chat_id: int,
+        user_id: int,
+        display_name: str,
+        character_class: Optional[str] = None,
+        character_description: Optional[str] = None,
+    ) -> tuple[Player, bool]:
         game = db.get_active_game(chat_id)
         if not game:
             raise NoActiveGame()
         if game.status != GAME_LOBBY:
             raise GameNotInLobby()
-        return db.add_player(game.id, user_id, display_name)
+        return db.add_player(
+            game.id,
+            user_id,
+            display_name,
+            character_class=character_class,
+            character_description=character_description,
+        )
 
     async def start_game(self, chat_id: int) -> tuple[str, Player]:
         """Start the game. Returns (narrative, first_player)."""
@@ -74,7 +98,12 @@ class GameManager:
             raise NotEnoughPlayers()
 
         round_ = db.start_game(game.id)
-        narrative = await self.narrator.narrate_scene(1, None)
+        player_contexts = [_player_context(p) for p in players]
+        try:
+            narrative = await self.narrator.narrate_scene(player_contexts)
+        except Exception:
+            logger.exception("Narrator failed to narrate opening scene")
+            narrative = "The adventure begins... but the narrator is momentarily lost for words."
         db.set_round_narrative(round_.id, narrative)
 
         first_player = self.policy.get_current_player(players, [])
@@ -110,27 +139,49 @@ class GameManager:
         if not current or current.id != player.id:
             raise NotYourTurn(current.display_name if current else "nobody")
 
-        db.submit_action(round_.id, player.id, action_text)
+        # Evaluate and resolve this action immediately
+        player_ctx = _player_context(player)
+        recent = self._build_recent_actions(actions, players)
+        roll = None
+        try:
+            outcome, roll = await self.narrator.evaluate_and_resolve_action(
+                player=player_ctx,
+                scene_narrative=round_.narrative or "",
+                action_text=action_text,
+                recent_actions=recent,
+            )
+        except Exception:
+            logger.exception("Narrator failed to resolve action")
+            outcome = f"{player.display_name} attempts to {action_text}... the narrator struggles to describe what happens."
+
+        action = db.submit_action(round_.id, player.id, action_text)
+        db.set_action_outcome(action.id, outcome)
+
         actions = db.get_actions_for_round(round_.id)
 
         if self.policy.is_round_complete(players, actions):
-            action_pairs = []
-            for a in actions:
-                p = next((p for p in players if p.id == a.player_id), None)
-                name = p.display_name if p else "Unknown"
-                action_pairs.append((name, a.text))
-
-            resolution = await self.narrator.resolve_round(round_.narrative or "", action_pairs)
+            # Build combined resolution from all action outcomes
+            resolution = self._build_resolution(actions, players)
             db.resolve_round(round_.id, resolution)
 
             new_round = db.advance_round(game.id)
-            new_narrative = await self.narrator.narrate_scene(new_round.round_number, resolution)
+            story_so_far = self._build_story_so_far(game.id)
+            player_contexts = [_player_context(p) for p in players]
+            try:
+                new_narrative = await self.narrator.narrate_scene(
+                    player_contexts, story_so_far=story_so_far
+                )
+            except Exception:
+                logger.exception("Narrator failed to narrate next scene")
+                new_narrative = "The story continues... the narrator gathers their thoughts."
             db.set_round_narrative(new_round.id, new_narrative)
 
             next_player = self.policy.get_current_player(players, [])
             return ActionResult(
                 accepted=True,
                 round_complete=True,
+                outcome=outcome,
+                roll=roll,
                 resolution=resolution,
                 new_narrative=new_narrative,
                 next_player=next_player,
@@ -140,16 +191,45 @@ class GameManager:
             return ActionResult(
                 accepted=True,
                 round_complete=False,
+                outcome=outcome,
+                roll=roll,
                 next_player=next_player,
             )
+
+    def _build_recent_actions(self, actions, players) -> list[ResolvedAction]:
+        result = []
+        for a in actions:
+            if a.outcome is None:
+                continue
+            p = next((p for p in players if p.id == a.player_id), None)
+            name = p.display_name if p else "Unknown"
+            result.append(ResolvedAction(player_name=name, text=a.text, outcome=a.outcome))
+        return result
+
+    def _build_resolution(self, actions, players) -> str:
+        parts = []
+        for a in actions:
+            p = next((p for p in players if p.id == a.player_id), None)
+            name = p.display_name if p else "Unknown"
+            outcome = a.outcome or "(no outcome)"
+            parts.append(f"**{name}**: {outcome}")
+        return "\n\n".join(parts)
+
+    def _build_story_so_far(self, game_id: int) -> Optional[str]:
+        rounds = db.get_all_rounds(game_id)
+        parts = []
+        for r in rounds:
+            if r.narrative:
+                parts.append(r.narrative)
+            if r.resolution:
+                parts.append(r.resolution)
+        return "\n\n".join(parts) if parts else None
 
     async def skip_player(self, chat_id: int, player_id: int) -> Optional[ActionResult]:
         game = db.get_active_game(chat_id)
         if not game or game.status != GAME_ACTIVE:
             return None
 
-        player = db.get_player_by_user_id(game.id, player_id) if False else None
-        # Find the player by their player.id, not user_id
         players = db.get_players(game.id)
         player = next((p for p in players if p.id == player_id), None)
         if not player:

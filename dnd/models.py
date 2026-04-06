@@ -42,6 +42,7 @@ class Player(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
     user_id: Mapped[int] = mapped_column(Integer)
     display_name: Mapped[str] = mapped_column(Text)
+    character_class: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     character_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     join_order: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(default=stockholm_now)
@@ -71,6 +72,7 @@ class Action(Base):
     round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"))
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
     text: Mapped[str] = mapped_column(Text)
+    outcome: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(default=stockholm_now)
 
     round: Mapped["Round"] = relationship(back_populates="actions")
