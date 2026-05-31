@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -91,10 +92,29 @@ class ArticleORM(Base):
         "metadata", JSONEncodedDict, nullable=True
     )
 
+    # --- Triage fields (consumed by the triage UI; the Telegram bot ignores them) ---
+    # Screening LLM routing hint: 'file' | 'skim' | 'deep'.
+    suggested_depth: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Triage decision lifecycle: 'pending' | 'deep' | 'filed' | 'dismissed'.
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    decided_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    zotero_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    zotero_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    obsidian_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    obsidian_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    routing_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("source_type", "external_id", name="uq_source_external"),
         Index("idx_articles_source_type", "source_type"),
         Index("idx_articles_discovered_at", "discovered_at"),
+        Index("idx_articles_status", "status", "discovered_at"),
+        Index(
+            "idx_articles_retry",
+            "next_retry_at",
+            sqlite_where=text("next_retry_at IS NOT NULL"),
+        ),
     )
 
 
@@ -150,6 +170,7 @@ def article_orm_to_dataclass(orm: ArticleORM) -> Article:
         llm_interest_score=orm.llm_interest_score,
         llm_reasoning=orm.llm_reasoning,
         llm_tags=orm.llm_tags or [],
+        suggested_depth=orm.suggested_depth,
         embedding=orm.embedding,
         metadata=orm.metadata_ or {},
     )
@@ -170,6 +191,7 @@ def article_dataclass_to_orm(article: Article, discovered_at: int) -> ArticleORM
         llm_interest_score=article.llm_interest_score,
         llm_reasoning=article.llm_reasoning,
         llm_tags=article.llm_tags if article.llm_tags else None,
+        suggested_depth=article.suggested_depth,
         embedding=article.embedding,
         metadata_=article.metadata if article.metadata else None,
     )

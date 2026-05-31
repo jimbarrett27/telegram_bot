@@ -30,6 +30,9 @@ class Article:
     llm_interest_score: Optional[float] = None
     llm_reasoning: Optional[str] = None
     llm_tags: List[str] = field(default_factory=list)
+    # Triage routing hint from the screening LLM: 'file' | 'skim' | 'deep'.
+    # Consumed by the triage UI; the Telegram bot ignores it.
+    suggested_depth: Optional[str] = None
     embedding: Optional[bytes] = None
     metadata: dict = field(default_factory=dict)
 

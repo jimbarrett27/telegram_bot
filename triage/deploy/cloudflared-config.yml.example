@@ -1,0 +1,16 @@
+# Cloudflare Tunnel config for the triage backend.
+# Install to /etc/cloudflared/config.yml (see deploy/README.md).
+#
+# Replace:
+#   <TUNNEL_UUID>  with the id printed by `cloudflared tunnel create triage`
+#   <DOMAIN>       with your Cloudflare-managed domain (e.g. example.com)
+
+tunnel: <TUNNEL_UUID>
+credentials-file: /root/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  # The triage API. The backend binds 127.0.0.1:8077 on the host.
+  - hostname: triage-api.<DOMAIN>
+    service: http://localhost:8077
+  # Everything else is rejected.
+  - service: http_status:404

@@ -19,7 +19,10 @@ RELEVANCE_SCORES = {"HIGH": 1.0, "MEDIUM": 0.5, "LOW": 0.0}
 CONFIDENCE_SCORES = {"HIGH": 1.0, "MEDIUM": 0.6, "LOW": 0.3}
 
 
-def screen_article(article: Article) -> Tuple[bool, float, str, List[str]]:
+VALID_DEPTHS = {"deep", "skim", "file"}
+
+
+def screen_article(article: Article) -> Tuple[bool, float, str, List[str], str]:
     """
     Screen an article using LLM to determine if it's relevant to pharmacovigilance.
 
@@ -27,7 +30,8 @@ def screen_article(article: Article) -> Tuple[bool, float, str, List[str]]:
         article: The article to screen.
 
     Returns:
-        Tuple of (is_relevant, score 0.0-1.0, reasoning string, tags list).
+        Tuple of (is_relevant, score 0.0-1.0, reasoning string, tags list,
+        suggested_depth 'deep'|'skim'|'file').
     """
     try:
         response = get_llm_response(
@@ -51,6 +55,9 @@ def screen_article(article: Article) -> Tuple[bool, float, str, List[str]]:
         confidence = result.get("confidence", "LOW").upper()
         reasoning = result.get("reasoning", "No reasoning provided")
         tags = result.get("tags", [])
+        suggested_depth = str(result.get("suggested_depth", "file")).lower()
+        if suggested_depth not in VALID_DEPTHS:
+            suggested_depth = "file"
 
         # Convert categorical values to numeric score
         relevance_score = RELEVANCE_SCORES.get(relevance, 0.0)
@@ -60,18 +67,18 @@ def screen_article(article: Article) -> Tuple[bool, float, str, List[str]]:
         score = relevance_score * confidence_score
         is_relevant = relevance in ("HIGH", "MEDIUM")
 
-        logger.info(f"Screened '{article.title[:50]}...': relevance={relevance}, confidence={confidence}, score={score:.2f}")
-        return is_relevant, score, reasoning, tags
+        logger.info(f"Screened '{article.title[:50]}...': relevance={relevance}, confidence={confidence}, score={score:.2f}, depth={suggested_depth}")
+        return is_relevant, score, reasoning, tags, suggested_depth
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response as JSON: {e}")
         logger.error(f"Response was: {response}")
         # Default to not relevant on parse error
-        return False, 0.0, f"Failed to parse LLM response: {e}", []
+        return False, 0.0, f"Failed to parse LLM response: {e}", [], "file"
     except Exception as e:
         logger.error(f"Error screening article: {e}")
         # Default to relevant on error to avoid missing papers
-        return True, 0.5, f"Error during screening: {e}", []
+        return True, 0.5, f"Error during screening: {e}", [], "file"
 
 
 def screen_and_update_article(article: Article) -> Article:
@@ -84,8 +91,9 @@ def screen_and_update_article(article: Article) -> Article:
     Returns:
         The article with llm_interest_score, llm_reasoning, and llm_tags set.
     """
-    is_relevant, score, reasoning, tags = screen_article(article)
+    is_relevant, score, reasoning, tags, suggested_depth = screen_article(article)
     article.llm_interest_score = score if is_relevant else 0.0
     article.llm_reasoning = reasoning
     article.llm_tags = tags
+    article.suggested_depth = suggested_depth
     return article

@@ -89,10 +89,11 @@ def process_new_articles(articles: List[Article]) -> int:
             continue
 
         # Screen with LLM before deciding to notify
-        is_relevant, score, reasoning, tags = screen_article(article)
+        is_relevant, score, reasoning, tags, suggested_depth = screen_article(article)
         article.llm_interest_score = score if is_relevant else 0.0
         article.llm_reasoning = reasoning
         article.llm_tags = tags
+        article.suggested_depth = suggested_depth
 
         # Always insert the article (for record keeping)
         article_id = insert_article(article)

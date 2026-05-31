@@ -11,11 +11,10 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from gcp_util.secrets import get_swedish_bot_key, get_minecraft_bot_key, get_photos_bot_key, get_diary_bot_key, get_dnd_bot_key, get_memes_bot_key
+from gcp_util.secrets import get_swedish_bot_key, get_minecraft_bot_key, get_photos_bot_key, get_dnd_bot_key, get_memes_bot_key
 from swedish.database import init_db as init_swedish_db, populate_db
 from swedish import swedish_bot
 from photos.photos_bot import get_handlers as get_photo_handlers
-from diary.diary_bot import get_handlers as get_diary_handlers, schedule_jobs as schedule_diary_jobs
 from dnd.database import init_db as init_dnd_db
 from dnd.dnd_bot import get_handlers as get_dnd_handlers
 from memes.daily_hn_meme import send_daily_hn_meme
@@ -137,17 +136,6 @@ def build_swedish_app() -> Application:
     return app
 
 
-def build_diary_app() -> Application:
-    app = Application.builder().token(get_diary_bot_key()).build()
-    for handler in get_diary_handlers():
-        app.add_handler(handler)
-    if app.job_queue:
-        schedule_diary_jobs(app.job_queue)
-    else:
-        logger.warning("JobQueue not available - diary prompts disabled.")
-    return app
-
-
 def build_dnd_app() -> Application:
     app = Application.builder().token(get_dnd_bot_key()).build()
     for handler in get_dnd_handlers():
@@ -193,19 +181,16 @@ async def run():
     swedish_app = build_swedish_app()
     minecraft_app = build_minecraft_app()
     photos_app = build_photos_app()
-    diary_app = build_diary_app()
     dnd_app = build_dnd_app()
     memes_app = build_memes_app()
 
-    async with swedish_app, minecraft_app, photos_app, diary_app, dnd_app, memes_app:
+    async with swedish_app, minecraft_app, photos_app, dnd_app, memes_app:
         await swedish_app.start()
         await swedish_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await minecraft_app.start()
         await minecraft_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await photos_app.start()
         await photos_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        await diary_app.start()
-        await diary_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await dnd_app.start()
         await dnd_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await memes_app.start()
@@ -228,8 +213,6 @@ async def run():
         await minecraft_app.stop()
         await photos_app.updater.stop()
         await photos_app.stop()
-        await diary_app.updater.stop()
-        await diary_app.stop()
         await dnd_app.updater.stop()
         await dnd_app.stop()
         await memes_app.updater.stop()

@@ -1,0 +1,18 @@
+# systemd unit for the triage FastAPI backend.
+# Install to /etc/systemd/system/triage-backend.service (see deploy/README.md).
+
+[Unit]
+Description=Paper triage backend (FastAPI)
+After=network.target
+
+[Service]
+User=jim
+WorkingDirectory=/home/jim/repos/telegram_bot
+EnvironmentFile=/etc/triage.env
+# Full path to uv (from `command -v uv`); runs the app from the repo's venv.
+ExecStart=/home/jim/.local/bin/uv run python -m triage
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
