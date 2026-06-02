@@ -38,3 +38,9 @@ PV_KEYWORDS = {
 
 # How often to scan feeds (in seconds)
 SCAN_INTERVAL_SECONDS = 24 * 60 * 60  # 24 hours
+
+# Feed entries published within this many days are considered for screening.
+# Undated entries are kept regardless; deduplication by external_id (in the
+# scanner) prevents anything being screened or stored twice, so this window only
+# bounds how far back a *first* sighting can be — it is not a "today only" gate.
+SCAN_LOOKBACK_DAYS = 7

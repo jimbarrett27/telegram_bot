@@ -13,7 +13,7 @@ import feedparser  # type: ignore
 import yaml
 from html2text import html2text
 
-from content_screening.constants import MODULE_ROOT, PV_KEYWORDS
+from content_screening.constants import MODULE_ROOT, PV_KEYWORDS, SCAN_LOOKBACK_DAYS
 from content_screening.models import Article, SourceType
 from util.logging_util import setup_logger
 
@@ -113,20 +113,21 @@ def _find_matching_keywords(text: str) -> List[str]:
     return [kw for kw in PV_KEYWORDS if kw in text_lower]
 
 
-def _is_published_today(entry: dict) -> bool:
-    """Check if an RSS entry was published exactly today.
+def _is_recent(entry: dict, lookback_days: int = SCAN_LOOKBACK_DAYS) -> bool:
+    """Whether an entry is within the look-back window.
 
-    Uses the published_parsed field from feedparser which provides a struct_time.
-    Returns False if no date is available or if the date is not exactly today.
+    Undated entries are kept (return True) — many journal feeds expose no parsed
+    date, and the old "exactly today" gate dropped them entirely. Deduplication
+    by external_id (in the scanner) prevents anything being reprocessed.
     """
     published_parsed = entry.get("published_parsed")
     if published_parsed is None:
-        # No date available, exclude the entry
-        return False
+        return True
 
-    today = date.today()
-    entry_date = date(published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday)
-    return entry_date == today
+    entry_date = date(
+        published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday
+    )
+    return (date.today() - entry_date).days <= lookback_days
 
 
 def fetch_rss_articles(
@@ -177,8 +178,8 @@ def fetch_rss_articles(
                 continue
             seen_ids.add(external_id)
 
-            # Only consider articles published today
-            if not _is_published_today(entry):
+            # Only consider articles within the look-back window (dedup does the rest)
+            if not _is_recent(entry):
                 continue
 
             title = entry.get("title", "").strip()

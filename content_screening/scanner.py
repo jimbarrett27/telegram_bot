@@ -5,148 +5,106 @@ Daily scan orchestration for content screening.
 import time
 from typing import List
 
+from sqlalchemy import func, select
+
 from content_screening.arxiv_feed import fetch_arxiv_papers
 from content_screening.constants import SCAN_INTERVAL_SECONDS
 from content_screening.database import (
     article_exists,
-    create_pending_notification,
     get_last_scan_time,
     insert_article,
     update_scan_history,
 )
+from content_screening.db_engine import get_session
 from content_screening.models import Article, SourceType
+from content_screening.orm_models import ArticleORM
 from content_screening.rss_feed import fetch_rss_articles
 from content_screening.screener import screen_article
-from telegram_bot.telegram_bot import send_message_to_me
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
 
 
-def _format_article_notification(article: Article) -> str:
-    """Format an article for notification."""
-    categories_str = ", ".join(article.categories) if article.categories else "Unknown"
+def process_new_articles(articles: List[Article]) -> tuple[int, int]:
+    """Screen new (unseen) articles with the LLM and insert them.
 
-    # Use appropriate label based on source type
-    if article.source_type == SourceType.RSS:
-        source_label = "Source"
-    else:
-        source_label = "Categories"
-
-    msg = f"""[Papers] New PV-related paper found!
-
-Title: {article.title}
-{source_label}: {categories_str}"""
-
-    if article.llm_reasoning:
-        msg += f"\nWhy: {article.llm_reasoning}"
-
-    msg += f"""
-
-{article.url}
-
-Reply with a rating (1-10) for how interesting you find this."""
-
-    return msg
-
-
-def _notify_about_article(article: Article):
-    """Send a notification about an interesting article."""
-    message = _format_article_notification(article)
-    send_message_to_me(message)
-    create_pending_notification(article.id)
-    logger.info(f"Sent notification for article: {article.external_id}")
-
-
-def _count_new_articles(articles: List[Article]) -> int:
-    """Count how many articles are new (not already in the database)."""
-    return sum(
-        1 for article in articles
-        if not article_exists(article.source_type, article.external_id)
-    )
-
-
-def _send_scan_start_notification(source_name: str, total_found: int, new_count: int):
-    """Send a notification about the papers about to be processed."""
-    if new_count == 0:
-        msg = f"[Papers] {source_name} scan: Found {total_found} papers, but none are new."
-    else:
-        msg = f"[Papers] {source_name} scan: Found {total_found} papers, {new_count} are new and will be processed."
-    send_message_to_me(msg)
-    logger.info(msg)
-
-
-def process_new_articles(articles: List[Article]) -> int:
+    Triage replaces the old per-article Telegram notifications, so nothing is
+    sent here — papers simply land in the DB for the triage queue. Returns
+    ``(new_inserted, new_relevant)``.
     """
-    Process a list of articles: screen with LLM, insert new ones, and notify if relevant.
-
-    Returns the number of new relevant articles notified about.
-    """
-    notified_count = 0
+    new_inserted = 0
+    new_relevant = 0
     for article in articles:
         if article_exists(article.source_type, article.external_id):
             logger.debug(f"Article already exists: {article.external_id}")
             continue
 
-        # Screen with LLM before deciding to notify
         is_relevant, score, reasoning, tags, suggested_depth = screen_article(article)
         article.llm_interest_score = score if is_relevant else 0.0
         article.llm_reasoning = reasoning
         article.llm_tags = tags
         article.suggested_depth = suggested_depth
 
-        # Always insert the article (for record keeping)
-        article_id = insert_article(article)
-        article.id = article_id
-
-        # Only notify if LLM says it's relevant
+        # Always insert (relevant ones enter the triage queue; the rest are kept
+        # for record-keeping with score 0).
+        article.id = insert_article(article)
+        new_inserted += 1
         if is_relevant:
-            _notify_about_article(article)
-            notified_count += 1
-        else:
-            logger.info(f"Skipping notification for '{article.title[:50]}...': not PV-relevant")
+            new_relevant += 1
 
-    return notified_count
+    return new_inserted, new_relevant
 
 
-def run_arxiv_scan() -> tuple[int, int]:
-    """
-    Run a scan of ArXiv feeds.
-
-    Returns (total_found, new_interesting) counts.
-    """
+def run_arxiv_scan() -> tuple[int, int, int]:
+    """Scan ArXiv feeds. Returns (total_found, new_inserted, new_relevant)."""
     logger.info("Starting ArXiv scan")
     articles = fetch_arxiv_papers()
     total_found = len(articles)
-    new_to_process = _count_new_articles(articles)
-
-    _send_scan_start_notification("ArXiv", total_found, new_to_process)
-
-    new_count = process_new_articles(articles)
-    update_scan_history(SourceType.ARXIV, total_found, new_count)
-
-    logger.info(f"ArXiv scan complete: {total_found} found, {new_count} notified")
-    return total_found, new_count
+    new_inserted, new_relevant = process_new_articles(articles)
+    update_scan_history(SourceType.ARXIV, total_found, new_relevant)
+    logger.info(f"ArXiv scan complete: {total_found} found, {new_inserted} new, {new_relevant} relevant")
+    return total_found, new_inserted, new_relevant
 
 
-def run_rss_scan() -> tuple[int, int]:
-    """
-    Run a scan of RSS feeds.
-
-    Returns (total_found, new_interesting) counts.
-    """
+def run_rss_scan() -> tuple[int, int, int]:
+    """Scan RSS feeds. Returns (total_found, new_inserted, new_relevant)."""
     logger.info("Starting RSS scan")
     articles = fetch_rss_articles()
     total_found = len(articles)
-    new_to_process = _count_new_articles(articles)
+    new_inserted, new_relevant = process_new_articles(articles)
+    update_scan_history(SourceType.RSS, total_found, new_relevant)
+    logger.info(f"RSS scan complete: {total_found} found, {new_inserted} new, {new_relevant} relevant")
+    return total_found, new_inserted, new_relevant
 
-    _send_scan_start_notification("RSS", total_found, new_to_process)
 
-    new_count = process_new_articles(articles)
-    update_scan_history(SourceType.RSS, total_found, new_count)
+def count_pending_triage() -> int:
+    """How many screened-relevant papers are awaiting a triage decision."""
+    with get_session() as session:
+        return session.scalar(
+            select(func.count())
+            .select_from(ArticleORM)
+            .where(ArticleORM.status == "pending", ArticleORM.llm_interest_score > 0)
+        ) or 0
 
-    logger.info(f"RSS scan complete: {total_found} found, {new_count} notified")
-    return total_found, new_count
+
+def run_full_scan() -> dict:
+    """Run all source scans (silently) and return summary counts."""
+    _, a_new, a_rel = run_arxiv_scan()
+    _, r_new, r_rel = run_rss_scan()
+    return {
+        "new": a_new + r_new,
+        "relevant": a_rel + r_rel,
+        "pending": count_pending_triage(),
+    }
+
+
+def format_scan_summary(counts: dict) -> str:
+    """The single daily message: new papers found + total awaiting triage."""
+    return (
+        "📚 Daily paper scan\n"
+        f"New papers: {counts['new']} ({counts['relevant']} relevant for triage)\n"
+        f"Awaiting triage: {counts['pending']}"
+    )
 
 
 def is_scan_due(source_type: SourceType) -> bool:
@@ -155,15 +113,3 @@ def is_scan_due(source_type: SourceType) -> bool:
     if last_scan is None:
         return True
     return (time.time() - last_scan) >= SCAN_INTERVAL_SECONDS
-
-
-def run_daily_scan_if_due():
-    """
-    Run daily scans for all sources if they are due.
-
-    This function is meant to be called from the main loop.
-    """
-    if is_scan_due(SourceType.ARXIV):
-        run_arxiv_scan()
-    if is_scan_due(SourceType.RSS):
-        run_rss_scan()

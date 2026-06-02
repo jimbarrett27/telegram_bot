@@ -7,16 +7,18 @@ is only reachable through the Cloudflare Tunnel, so the header can be trusted).
 ``/healthz`` is intentionally left open for container/tunnel health probes.
 """
 
-from typing import Iterator, Optional
+import asyncio
+import contextlib
+from typing import AsyncIterator, Iterator, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from content_screening.db_engine import get_session
-from triage import repository, routing
+from triage import repository, retry, routing
 from triage.config import Settings, get_settings
-from triage.schemas import DecideRequest, PaperOut
+from triage.schemas import Decision, PaperOut
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
@@ -29,6 +31,20 @@ def db_session() -> Iterator[Session]:
     """FastAPI dependency yielding a screening-DB session."""
     with get_session() as session:
         yield session
+
+
+def route_paper_in_background(paper_id: int, settings: Settings) -> None:
+    """Route a freshly-decided paper off the request path.
+
+    Opens its own session (the request's is already closed) and re-loads the
+    paper so a quick undo between the response and this task is respected:
+    ``route_and_schedule`` is a no-op for a paper reverted to ``pending``.
+    """
+    with get_session() as session:
+        paper = repository.get_paper(session, paper_id)
+        if paper is None:
+            return
+        routing.route_and_schedule(paper, settings)
 
 
 def make_access_guard(settings: Settings):
@@ -52,11 +68,29 @@ def make_access_guard(settings: Settings):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Start the background routing retry loop, cancelling it on shutdown.
+        task = (
+            asyncio.create_task(retry.retry_loop(settings))
+            if settings.routing_retry_enabled
+            else None
+        )
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
     app = FastAPI(
         title="Paper Triage",
         # Namespaced so everything lives under the proxied /api/triage/* path.
         docs_url=f"{API_PREFIX}/docs",
         openapi_url=f"{API_PREFIX}/openapi.json",
+        lifespan=lifespan,
     )
 
     # The SPA is served from the main domain and calls the API on a separate
@@ -87,6 +121,12 @@ def create_app() -> FastAPI:
         logger.info("queue requested: %d pending papers", len(papers))
         return [PaperOut.from_orm_article(p) for p in papers]
 
+    @router.get("/history", response_model=list[PaperOut])
+    def history(session: Session = Depends(db_session)) -> list[PaperOut]:
+        papers = repository.get_decided_papers(session)
+        logger.info("history requested: %d decided papers", len(papers))
+        return [PaperOut.from_orm_article(p) for p in papers]
+
     @router.get("/papers/{paper_id}", response_model=PaperOut)
     def get_paper(paper_id: int, session: Session = Depends(db_session)) -> PaperOut:
         paper = repository.get_paper(session, paper_id)
@@ -97,17 +137,24 @@ def create_app() -> FastAPI:
     @router.post("/papers/{paper_id}/decide", response_model=PaperOut)
     def decide(
         paper_id: int,
-        body: DecideRequest,
+        decision: Decision,
+        background_tasks: BackgroundTasks,
         session: Session = Depends(db_session),
     ) -> PaperOut:
+        # `decision` is a query parameter (not a JSON body) deliberately: with an
+        # empty body and no Content-Type the browser treats the cross-origin POST
+        # as a "simple" request and skips the CORS preflight, which Cloudflare's
+        # edge rejects for OPTIONS. The Access cookie still rides along.
         paper = repository.get_paper(session, paper_id)
         if paper is None:
             raise HTTPException(status_code=404, detail="Paper not found")
-        repository.apply_decision(paper, body.decision)
-        # Initial routing attempt runs inline; the retry loop (step 8) will pick
-        # up anything that failed. Failures are recorded on the row, not raised.
-        routing.route_decision(paper, settings)
-        logger.info("decision: paper=%d -> %s", paper_id, body.decision)
+        repository.apply_decision(paper, decision)
+        # Persist the decision now so the background task (its own session) sees
+        # it, then route off the request path. The response returns immediately
+        # with routing pending; the retry loop covers any failure.
+        session.commit()
+        background_tasks.add_task(route_paper_in_background, paper_id, settings)
+        logger.info("decision: paper=%d -> %s", paper_id, decision)
         return PaperOut.from_orm_article(paper)
 
     @router.post("/papers/{paper_id}/undo", response_model=PaperOut)

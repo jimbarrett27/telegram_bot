@@ -59,13 +59,13 @@ sudo mkdir -p /etc/cloudflared
 sudo cp triage/deploy/cloudflared-config.yml.example /etc/cloudflared/config.yml
 # Move the tunnel creds where root's service can read them, then edit config:
 sudo cp ~/.cloudflared/<TUNNEL_UUID>.json /root/.cloudflared/   # mkdir if needed
-sudoedit /etc/cloudflared/config.yml   # fill in <TUNNEL_UUID> and <DOMAIN>
+sudoedit /etc/cloudflared/config.yml   # fill in <TUNNEL_UUID> (domain already set)
 ```
 
 ## 4. Create the DNS record for the hostname
 
 ```bash
-cloudflared tunnel route dns triage triage-api.<domain>
+cloudflared tunnel route dns triage triage-api.jimbarrett.dev
 ```
 
 ## 5. Run cloudflared as a service
@@ -80,26 +80,26 @@ sudo systemctl status cloudflared
 
 Zero Trust → **Access → Applications → Add an application → Self-hosted**:
 
-- **Application domain:** `triage-api.<domain>` (whole host).
+- **Application domain:** `triage-api.jimbarrett.dev` (whole host).
 - **Policy:** Action *Allow*; Include → *Emails* → `jimbarrett27@gmail.com`.
 - **CORS settings (important):** the SPA calls this host cross-origin, so the
   browser sends an unauthenticated `OPTIONS` preflight that Access would
   otherwise challenge. In the application's CORS settings:
-  - Access-Control-Allow-Origins: `https://<your-site-domain>`
+  - Access-Control-Allow-Origins: `https://jimbarrett.dev`
   - Allow credentials: on
   - Methods: GET, POST · Headers: `*`
 - Leave `/healthz` reachable — it's open in the app and used for probes.
 
-> The `/triage` SPA route itself is **not** gated here (your site is on App
+> The `/triage` SPA route itself is **not** gated here (jimbarrett.dev is on App
 > Engine, not Cloudflare). That's fine per the design: the route fetches
 > nothing until a request clears Access on this API. If you later move the site
-> behind Cloudflare, add a second Access app for `<site>/triage`.
+> behind Cloudflare, add a second Access app for `jimbarrett.dev/triage`.
 
 ## 7. Backend production env + service
 
 ```bash
 sudo cp triage/deploy/triage.env.example /etc/triage.env
-sudoedit /etc/triage.env             # set TRIAGE_ALLOWED_ORIGINS to your site
+sudoedit /etc/triage.env             # set TRIAGE_ZOTERO_ENABLED=true (origins prefilled)
 sudo cp triage/deploy/triage-backend.service.example \
         /etc/systemd/system/triage-backend.service
 sudo systemctl daemon-reload
@@ -109,14 +109,40 @@ curl -s localhost:8077/healthz       # {"status":"ok"}
 
 ## 8. Verify end-to-end (from the work laptop)
 
-- `https://triage-api.<domain>/healthz` → `{"status":"ok"}` (open).
-- `https://triage-api.<domain>/api/triage/queue` in a browser → redirected to
-  the Access login; after signing in as the allowed email → JSON.
-- Point the Angular app's API base at `https://triage-api.<domain>` (replacing
-  the dev proxy) and load `/triage` — it should list papers once you're past
-  Access. (Frontend base-URL switch is a small follow-up.)
+- `https://triage-api.jimbarrett.dev/healthz` → `{"status":"ok"}` (open).
+- `https://triage-api.jimbarrett.dev/api/triage/queue` in a browser → redirected
+  to the Access login; after signing in as the allowed email → JSON.
+- Point the Angular app's API base at `https://triage-api.jimbarrett.dev`
+  (replacing the dev proxy) and load `/triage` — it should list papers once
+  you're past Access. (Frontend base-URL switch is a small follow-up.)
 
 ### Quick negative checks
 - Signing in with a different Google account → blocked by the Access policy.
 - A direct request without the Access header (only possible if the backend were
   reachable off-tunnel) → 403 from the backend's own guard.
+
+---
+
+## Zotero credentials (build step 7)
+
+`deep` decisions push the paper into your personal Zotero library. Both
+credentials live in GCP Secret Manager (matching the Telegram bot's secrets), so
+the backend fetches them at push time and nothing sensitive sits in the env file:
+
+1. **API key** — create at <https://www.zotero.org/settings/security> →
+   *Applications* (needs read/write to your personal library):
+   ```bash
+   printf %s 'PASTE_KEY' | gcloud secrets create ZOTERO_API_KEY \
+     --project=personal-website-318015 --data-file=-
+   # later rotations: gcloud secrets versions add ZOTERO_API_KEY --data-file=-
+   ```
+2. **User ID** — the numeric *userID* shown on that same settings page:
+   ```bash
+   printf %s 'NUMERIC_USER_ID' | gcloud secrets create ZOTERO_USER_ID \
+     --project=personal-website-318015 --data-file=-
+   ```
+
+Enable pushing with `TRIAGE_ZOTERO_ENABLED=true` in `/etc/triage.env` (empty/false
+disables it — dev default). A push failure is recorded on the row (`zotero_error`)
+and never blocks the decision; the step-8 retry loop re-attempts. Idempotent via
+the stored `zotero_key`.

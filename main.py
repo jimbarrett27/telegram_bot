@@ -20,6 +20,7 @@ from dnd.dnd_bot import get_handlers as get_dnd_handlers
 from memes.daily_hn_meme import send_daily_hn_meme
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
 from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
+from content_screening.scanner import run_full_scan, format_scan_summary
 from telegram_bot.telegram_bot import TelegramBot
 from util.logging_util import setup_logger, log_telegram_message_received
 from util.timezone import stockholm_time
@@ -112,6 +113,20 @@ async def daily_summary_task(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error in daily summary: {e}")
 
 
+async def daily_paper_scan_task(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scan the paper feeds once a day and send a single summary message.
+
+    The scan does blocking network + LLM work, so it runs in a worker thread to
+    avoid stalling the bots' event loop. Per-paper notifications are intentionally
+    gone — papers flow silently into the triage queue; this is the only message.
+    """
+    try:
+        counts = await asyncio.to_thread(run_full_scan)
+        context.bot_data["minecraft_bot"].send_message_to_me(format_scan_summary(counts))
+    except Exception as e:
+        logger.error(f"Error in daily paper scan: {e}")
+
+
 # --- App setup ---
 
 def build_swedish_app() -> Application:
@@ -161,6 +176,8 @@ def build_memes_app() -> Application:
 
 def build_minecraft_app() -> Application:
     app = Application.builder().token(get_minecraft_bot_key()).build()
+    # Kept as the personal "notify" bot (sends the daily paper-scan summary)
+    # even though the Minecraft server itself was sunsetted (2026-06-02).
     app.bot_data["minecraft_bot"] = TelegramBot(get_minecraft_bot_key())
 
     app.add_handler(CommandHandler("start", minecraft_start))
@@ -168,11 +185,15 @@ def build_minecraft_app() -> Application:
     app.add_handler(CommandHandler("status", minecraft_status))
 
     if app.job_queue:
-        app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
-        app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
-        app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
+        # Minecraft server monitoring disabled — server sunsetted 2026-06-02.
+        # app.job_queue.run_repeating(periodic_tasks, interval=60, first=10)
+        # app.job_queue.run_repeating(healthcheck_task, interval=300, first=30)
+        # app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
+        # Daily paper feed scan → one summary message (triage replaces the
+        # old per-paper Telegram notifications).
+        app.job_queue.run_daily(daily_paper_scan_task, time=stockholm_time(8, 0))
     else:
-        logger.warning("JobQueue not available - periodic tasks disabled.")
+        logger.warning("JobQueue not available - daily paper scan disabled.")
 
     return app
 

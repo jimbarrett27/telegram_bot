@@ -49,6 +49,10 @@ class PaperOut(BaseModel):
     zotero_error: str | None
     obsidian_path: str | None
     obsidian_error: str | None
+    # Retry bookkeeping for failed routing (step 8). `next_retry_at` is the
+    # scheduled time of the next attempt, or null when complete / given up.
+    routing_attempts: int
+    next_retry_at: datetime | None
 
     @classmethod
     def from_orm_article(cls, article: ArticleORM) -> "PaperOut":
@@ -72,4 +76,6 @@ class PaperOut(BaseModel):
             zotero_error=article.zotero_error,
             obsidian_path=article.obsidian_path,
             obsidian_error=article.obsidian_error,
+            routing_attempts=article.routing_attempts,
+            next_retry_at=article.next_retry_at,
         )

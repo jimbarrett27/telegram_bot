@@ -71,6 +71,18 @@ def get_photos_bot_key() -> str:
 
 
 @lru_cache(maxsize=1)
+def get_zotero_api_key() -> str:
+    """Zotero API key for the paper-triage Zotero pusher (build step 7)."""
+    return _bot_key("ZOTERO_API_KEY")
+
+
+@lru_cache(maxsize=1)
+def get_zotero_user_id() -> str:
+    """Personal Zotero library (user) ID for the paper-triage pusher."""
+    return _bot_key("ZOTERO_USER_ID")
+
+
+@lru_cache(maxsize=1)
 def get_photo_email_address() -> str:
     return get_gcp_secret(GCPSecret(
         project_id="personal-website-318015", secret_id="JIMMY_PHOTO_EMAIL_ADDRESS", version="latest"

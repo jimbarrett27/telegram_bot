@@ -1,16 +1,22 @@
 # Cloudflare Tunnel config for the triage backend.
 # Install to /etc/cloudflared/config.yml (see deploy/README.md).
 #
+# NOTE (2026-06-01): the LIVE tunnel on jim-server is dashboard/token-managed
+# (cloudflared runs with `--token`, NOT this file), so the ingress is set in the
+# Cloudflare Zero Trust dashboard. This file documents the equivalent local-config
+# approach. EITHER WAY the service MUST be http://localhost:8077 (or 127.0.0.1) —
+# NOT http://jim-server:8077: `jim-server` resolves to 127.0.1.1 while the backend
+# binds 127.0.0.1, so the hostname form yields connection-refused -> 502 after auth.
+#
 # Replace:
 #   <TUNNEL_UUID>  with the id printed by `cloudflared tunnel create triage`
-#   <DOMAIN>       with your Cloudflare-managed domain (e.g. example.com)
 
 tunnel: <TUNNEL_UUID>
 credentials-file: /root/.cloudflared/<TUNNEL_UUID>.json
 
 ingress:
   # The triage API. The backend binds 127.0.0.1:8077 on the host.
-  - hostname: triage-api.<DOMAIN>
+  - hostname: triage-api.jimbarrett.dev
     service: http://localhost:8077
   # Everything else is rejected.
   - service: http_status:404

@@ -9,10 +9,11 @@ import pytest
 from content_screening.constants import INTERESTING_ARXIV_CATEGORIES
 from content_screening.models import Article, SourceType
 from content_screening.arxiv_feed import (
+    _clean_summary,
     _extract_authors,
     _extract_paper_id,
     _find_matching_keywords,
-    _is_published_today,
+    _is_recent,
     fetch_arxiv_papers,
     get_arxiv_rss_url,
     make_arxiv_url,
@@ -470,59 +471,41 @@ class TestArxivFeedIntegration:
         assert len(articles) >= 0
 
 
-class TestIsPublishedToday:
-    """Tests for _is_published_today function."""
+class TestIsRecent:
+    """Tests for the _is_recent look-back filter (replaces the old today-only gate)."""
 
     def _make_struct_time(self, year: int, month: int, day: int):
         """Create a struct_time for testing."""
         return time.struct_time((year, month, day, 0, 0, 0, 0, 0, 0))
 
-    def test_returns_true_for_today(self):
-        """Test that entries published today return True."""
-        today = date.today()
-        entry = {
-            "published_parsed": self._make_struct_time(
-                today.year, today.month, today.day
-            )
-        }
-        assert _is_published_today(entry) is True
+    def _entry(self, d: date) -> dict:
+        return {"published_parsed": self._make_struct_time(d.year, d.month, d.day)}
 
-    def test_returns_false_for_yesterday(self):
-        """Test that entries published yesterday return False."""
-        yesterday = date.today() - timedelta(days=1)
-        entry = {
-            "published_parsed": self._make_struct_time(
-                yesterday.year, yesterday.month, yesterday.day
-            )
-        }
-        assert _is_published_today(entry) is False
+    def test_today_is_recent(self):
+        assert _is_recent(self._entry(date.today())) is True
 
-    def test_returns_false_for_tomorrow(self):
-        """Test that entries published tomorrow (future) return False."""
-        tomorrow = date.today() + timedelta(days=1)
-        entry = {
-            "published_parsed": self._make_struct_time(
-                tomorrow.year, tomorrow.month, tomorrow.day
-            )
-        }
-        assert _is_published_today(entry) is False
+    def test_yesterday_is_recent(self):
+        # The key behaviour change: yesterday is now KEPT (was dropped before).
+        assert _is_recent(self._entry(date.today() - timedelta(days=1))) is True
 
-    def test_returns_false_for_future_date(self):
-        """Test that entries with far future dates return False."""
-        future = date.today() + timedelta(days=30)
-        entry = {
-            "published_parsed": self._make_struct_time(
-                future.year, future.month, future.day
-            )
-        }
-        assert _is_published_today(entry) is False
+    def test_within_window_is_recent(self):
+        assert _is_recent(self._entry(date.today() - timedelta(days=6)), lookback_days=7) is True
 
-    def test_returns_false_for_no_date(self):
-        """Test that entries without a date return False."""
-        entry = {}
-        assert _is_published_today(entry) is False
+    def test_older_than_window_is_not_recent(self):
+        assert _is_recent(self._entry(date.today() - timedelta(days=30)), lookback_days=7) is False
 
-    def test_returns_false_for_none_date(self):
-        """Test that entries with None date return False."""
-        entry = {"published_parsed": None}
-        assert _is_published_today(entry) is False
+    def test_undated_entries_are_kept(self):
+        # No date -> kept (dedup prevents reprocessing); was excluded before.
+        assert _is_recent({}) is True
+        assert _is_recent({"published_parsed": None}) is True
+
+
+class TestCleanSummary:
+    """Tests for stripping arXiv's announce-type boilerplate from summaries."""
+
+    def test_strips_announce_prefix_and_abstract_label(self):
+        raw = "arXiv:2606.00027v1 Announce Type: new\nAbstract: This is the real abstract."
+        assert _clean_summary(raw) == "This is the real abstract."
+
+    def test_leaves_clean_summary_untouched(self):
+        assert _clean_summary("Just a plain abstract.") == "Just a plain abstract."

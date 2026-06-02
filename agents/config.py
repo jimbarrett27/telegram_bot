@@ -1,7 +1,6 @@
-"""Provider-agnostic LLM configuration."""
+"""OpenRouter LLM configuration."""
 
 import logging
-import os
 import random
 import time
 from typing import Any, Optional
@@ -72,18 +71,16 @@ def _get_resilient_class():
 
 
 def get_llm(
-    provider: str = "openrouter",
-    model: str | None = None,
+    model: str,
     temperature: float = 0.7,
     callbacks: list | None = None,
     thinking_budget: int = 0,
 ):
     """
-    Factory function to get a configured LLM instance.
+    Factory function to get a configured LLM instance (OpenRouter only).
 
     Args:
-        provider: LLM provider ("openrouter", "openai", "anthropic", "ollama")
-        model: Model name (uses provider default if None)
+        model: OpenRouter model slug (e.g. "deepseek/deepseek-v4-flash")
         temperature: Sampling temperature
         callbacks: Optional LangChain callback handlers
         thinking_budget: Max thinking tokens (0 to disable)
@@ -91,50 +88,20 @@ def get_llm(
     Returns:
         Configured LLM instance
     """
-    if provider == "openrouter":
-        if not model:
-            raise ValueError("model is required for openrouter provider")
+    if not model:
+        raise ValueError("model is required")
 
-        ResilientLLM = _get_resilient_class()
-        kwargs: dict[str, Any] = dict(
-            model=model,
-            temperature=temperature,
-            max_tokens=32768,
-            openai_api_key=get_openrouter_api_key(),
-            openai_api_base="https://openrouter.ai/api/v1",
-            callbacks=callbacks,
-        )
-        if thinking_budget > 0:
-            kwargs["extra_body"] = {
-                "reasoning": {"max_tokens": thinking_budget},
-            }
-        return ResilientLLM(**kwargs)
-
-    elif provider == "openai":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=model or "gpt-4o-mini",
-            temperature=temperature,
-            api_key=os.getenv("OPENAI_API_KEY"),
-            callbacks=callbacks,
-        )
-
-    elif provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            model=model or "claude-3-5-sonnet-20241022",
-            temperature=temperature,
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            callbacks=callbacks,
-        )
-
-    elif provider == "ollama":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(
-            model=model or "llama3.2",
-            temperature=temperature,
-            callbacks=callbacks,
-        )
-
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    ResilientLLM = _get_resilient_class()
+    kwargs: dict[str, Any] = dict(
+        model=model,
+        temperature=temperature,
+        max_tokens=32768,
+        openai_api_key=get_openrouter_api_key(),
+        openai_api_base="https://openrouter.ai/api/v1",
+        callbacks=callbacks,
+    )
+    if thinking_budget > 0:
+        kwargs["extra_body"] = {
+            "reasoning": {"max_tokens": thinking_budget},
+        }
+    return ResilientLLM(**kwargs)

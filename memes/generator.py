@@ -20,13 +20,12 @@ Rules:
 - Use exactly one tool call. Do not explain yourself, just make the meme.
 """
 
-DEFAULT_MODEL = "google/gemini-2.5-flash"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
 
 
 def generate_meme(
     prompt: str,
     model: str = DEFAULT_MODEL,
-    provider: str = "openrouter",
     exclude_templates: list[str] | None = None,
 ) -> tuple[bytes, str, str]:
     """Generate a meme from a text prompt.
@@ -40,7 +39,7 @@ def generate_meme(
     if exclude_templates:
         tools = [t for t in tools if t.name not in exclude_templates]
 
-    llm = get_llm(provider=provider, model=model, temperature=1.0)
+    llm = get_llm(model=model, temperature=1.0)
     agent = Agent(
         name="meme_generator",
         system_prompt=SYSTEM_PROMPT,

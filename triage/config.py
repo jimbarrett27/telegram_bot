@@ -1,7 +1,8 @@
 """Runtime configuration for the triage backend, sourced from the environment.
 
-Kept deliberately small. Zotero/Obsidian settings are added here as those
-integrations land (build steps 6 and 7).
+Kept deliberately small. Secrets (the Zotero API key) are not held here — they
+are fetched from GCP Secret Manager at use time; only non-secret identifiers and
+toggles live in this dataclass.
 """
 
 import os
@@ -41,6 +42,23 @@ class Settings:
     # Vault-relative folder stubs are written into.
     obsidian_inbox_subdir: str = "literature/inbox"
 
+    # --- Zotero ---
+    # Whether to push `deep` papers to Zotero. Both the user ID and the API key
+    # are fetched from GCP Secret Manager (ZOTERO_USER_ID / ZOTERO_API_KEY) at
+    # push time, so only this toggle lives here. Off by default (local/dev).
+    zotero_enabled: bool = False
+
+    # --- Routing retry loop (step 8) ---
+    # A background task re-attempts routing for papers whose Zotero/Obsidian
+    # push failed. Off in tests/dev; the systemd service enables it.
+    routing_retry_enabled: bool = True
+    # How often the loop scans for due retries.
+    routing_retry_interval_seconds: int = 60
+    # Exponential backoff base: the n-th retry waits base * 2**(n-1) seconds,
+    # capped at one hour (see retry.py). Give up after this many attempts.
+    routing_retry_base_seconds: int = 60
+    routing_max_attempts: int = 6
+
 
 def _csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
@@ -63,4 +81,17 @@ def get_settings() -> Settings:
         obsidian_inbox_subdir=os.environ.get(
             "TRIAGE_OBSIDIAN_INBOX_SUBDIR", "literature/inbox"
         ),
+        zotero_enabled=os.environ.get("TRIAGE_ZOTERO_ENABLED", "false").lower()
+        in ("1", "true", "yes"),
+        routing_retry_enabled=os.environ.get(
+            "TRIAGE_ROUTING_RETRY_ENABLED", "true"
+        ).lower()
+        in ("1", "true", "yes"),
+        routing_retry_interval_seconds=int(
+            os.environ.get("TRIAGE_ROUTING_RETRY_INTERVAL_SECONDS", "60")
+        ),
+        routing_retry_base_seconds=int(
+            os.environ.get("TRIAGE_ROUTING_RETRY_BASE_SECONDS", "60")
+        ),
+        routing_max_attempts=int(os.environ.get("TRIAGE_ROUTING_MAX_ATTEMPTS", "6")),
     )

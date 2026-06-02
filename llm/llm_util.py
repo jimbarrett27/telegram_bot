@@ -6,7 +6,7 @@ import time
 
 logger = setup_logger(__name__)
 
-DEFAULT_MODEL = "google/gemini-3-flash-preview"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
 
 
 def get_llm_response(template_path: str, params: dict, model_name: str = DEFAULT_MODEL) -> str:

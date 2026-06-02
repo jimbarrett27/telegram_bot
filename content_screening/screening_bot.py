@@ -77,16 +77,16 @@ async def handle_scan_async(
                 "Starting ArXiv scan...",
                 reply_markup=MAIN_MENU_KEYBOARD,
             )
-            total, new = run_arxiv_scan()
-            results.append(f"ArXiv: {total} found, {new} new")
+            total, new, relevant = run_arxiv_scan()
+            results.append(f"ArXiv: {total} found, {new} new, {relevant} relevant")
 
         if scan_type in ("rss", "all"):
             await update.message.reply_text(
                 "Starting RSS scan...",
                 reply_markup=MAIN_MENU_KEYBOARD,
             )
-            total, new = run_rss_scan()
-            results.append(f"RSS: {total} found, {new} new")
+            total, new, relevant = run_rss_scan()
+            results.append(f"RSS: {total} found, {new} new, {relevant} relevant")
 
         await update.message.reply_text(
             "Scan complete!\n" + "\n".join(results),

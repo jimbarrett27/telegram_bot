@@ -2,6 +2,7 @@
 ArXiv RSS feed fetching and processing.
 """
 
+import re
 import time
 from datetime import date
 from typing import List
@@ -9,11 +10,29 @@ from typing import List
 import feedparser  # type: ignore
 from html2text import html2text
 
-from content_screening.constants import INTERESTING_ARXIV_CATEGORIES, PV_KEYWORDS
+from content_screening.constants import (
+    INTERESTING_ARXIV_CATEGORIES,
+    PV_KEYWORDS,
+    SCAN_LOOKBACK_DAYS,
+)
 from content_screening.models import Article, SourceType
 from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
+
+# arXiv's RSS now prefixes each summary with e.g.
+# "arXiv:2606.00027v1 Announce Type: new\nAbstract: <text>". Strip that boilerplate
+# so only the abstract is screened/stored.
+_ARXIV_ANNOUNCE_RE = re.compile(r"^\s*arXiv:\S+\s+Announce Type:\s+\S+\s*", re.IGNORECASE)
+_ABSTRACT_LABEL_RE = re.compile(r"^\s*Abstract:\s*", re.IGNORECASE)
+
+
+def _clean_summary(raw_summary: str) -> str:
+    """Convert the feed summary to plain text and drop arXiv's announce prefix."""
+    text = html2text(raw_summary).strip()
+    text = _ARXIV_ANNOUNCE_RE.sub("", text)
+    text = _ABSTRACT_LABEL_RE.sub("", text)
+    return text.strip()
 
 
 def get_arxiv_rss_url(arxiv_category: str) -> str:
@@ -53,20 +72,21 @@ def _find_matching_keywords(text: str) -> List[str]:
     return [kw for kw in PV_KEYWORDS if kw in text_lower]
 
 
-def _is_published_today(entry: dict) -> bool:
-    """Check if an RSS entry was published exactly today.
+def _is_recent(entry: dict, lookback_days: int = SCAN_LOOKBACK_DAYS) -> bool:
+    """Whether an entry is within the look-back window.
 
-    Uses the published_parsed field from feedparser which provides a struct_time.
-    Returns False if no date is available or if the date is not exactly today.
+    Undated entries are kept (return True) — deduplication by external_id stops
+    them being reprocessed. This replaces the old "exactly today" gate, which
+    dropped undated feeds entirely and missed anything published off the run day.
     """
     published_parsed = entry.get("published_parsed")
     if published_parsed is None:
-        # No date available, exclude the entry
-        return False
+        return True
 
-    today = date.today()
-    entry_date = date(published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday)
-    return entry_date == today
+    entry_date = date(
+        published_parsed.tm_year, published_parsed.tm_mon, published_parsed.tm_mday
+    )
+    return (date.today() - entry_date).days <= lookback_days
 
 
 def fetch_arxiv_papers(
@@ -109,12 +129,12 @@ def fetch_arxiv_papers(
                 continue
             seen_ids.add(paper_id)
 
-            # Only consider papers published today
-            if not _is_published_today(entry):
+            # Only consider papers within the look-back window (dedup does the rest)
+            if not _is_recent(entry):
                 continue
 
             title = entry.get("title", "").strip()
-            abstract = html2text(entry.get("summary", "")).strip()
+            abstract = _clean_summary(entry.get("summary", ""))
 
             if filter_by_keywords:
                 search_text = f"{title} {abstract}"

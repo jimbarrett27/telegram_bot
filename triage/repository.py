@@ -34,6 +34,18 @@ def get_pending_papers(
     return list(session.scalars(stmt))
 
 
+def get_decided_papers(session: Session, limit: int = 200) -> list[ArticleORM]:
+    """Papers that have been triaged (any non-pending status), newest decision
+    first. Powers the history view."""
+    stmt = (
+        select(ArticleORM)
+        .where(ArticleORM.status != "pending")
+        .order_by(ArticleORM.decided_at.desc())
+        .limit(limit)
+    )
+    return list(session.scalars(stmt))
+
+
 def get_paper(session: Session, paper_id: int) -> Optional[ArticleORM]:
     """Fetch a single paper by id, or ``None`` if it doesn't exist."""
     return session.get(ArticleORM, paper_id)
