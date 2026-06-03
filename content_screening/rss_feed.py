@@ -3,6 +3,7 @@ Generic RSS feed fetching and processing.
 """
 
 import hashlib
+import re
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -107,6 +108,30 @@ def _extract_summary(entry: dict) -> str:
     return html2text(summary).strip()
 
 
+# ScienceDirect/Elsevier feeds carry no author field and no abstract; the summary
+# is just a metadata blob, e.g. "Publication date: …\n**Source:** …\nAuthor(s): a, b, c".
+_AUTHORS_LINE_RE = re.compile(r"Author\(s\):\s*(.+)", re.IGNORECASE)
+_PREAMBLE_LINE_RE = re.compile(
+    r"^\s*(?:Publication date:|\*{0,2}Source:\*{0,2}|Author\(s\):).*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _authors_from_summary(text: str) -> List[str]:
+    """Parse an Elsevier 'Author(s): a, b, c' line out of the summary text."""
+    match = _AUTHORS_LINE_RE.search(text)
+    if not match:
+        return []
+    return [name.strip() for name in match.group(1).split(",") if name.strip()]
+
+
+def _strip_metadata_preamble(text: str) -> str:
+    """Drop the Elsevier 'Publication date / Source / Author(s)' lines, leaving
+    only the real abstract (often empty for these feeds — better empty than noise)."""
+    cleaned = _PREAMBLE_LINE_RE.sub("", text)
+    return re.sub(r"\n{2,}", "\n\n", cleaned).strip()
+
+
 def _find_matching_keywords(text: str) -> List[str]:
     """Find PV keywords that match in the given text."""
     text_lower = text.lower()
@@ -186,7 +211,11 @@ def fetch_rss_articles(
             if not title:
                 continue
 
-            abstract = _extract_summary(entry)
+            raw_summary = _extract_summary(entry)
+            # Elsevier feeds bury authors in the summary and have no author field;
+            # parse them out before stripping the metadata preamble from the abstract.
+            authors = _extract_authors(entry) or _authors_from_summary(raw_summary)
+            abstract = _strip_metadata_preamble(raw_summary)
             link = entry.get("link", "")
             if not link:
                 continue
@@ -205,7 +234,7 @@ def fetch_rss_articles(
                 title=title,
                 abstract=abstract,
                 url=link,
-                authors=_extract_authors(entry),
+                authors=authors,
                 categories=[feed_config.name],
                 keywords_matched=matching_keywords,
                 discovered_at=discovered_at,

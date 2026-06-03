@@ -11,13 +11,40 @@ from content_screening.models import Article, SourceType
 from content_screening.rss_feed import (
     FEEDS_CONFIG_PATH,
     FeedConfig,
+    _authors_from_summary,
     _extract_authors,
     _extract_summary,
     _find_matching_keywords,
     _generate_external_id,
+    _strip_metadata_preamble,
     fetch_rss_articles,
     load_feed_configs,
 )
+
+
+class TestScienceDirectPreamble:
+    """ScienceDirect/Elsevier feeds bury authors in the summary and have no abstract."""
+
+    SUMMARY = (
+        "Publication date: August 2026\n\n"
+        "**Source:** Journal of Biomedical Informatics, Volume 180\n\n"
+        "Author(s): Dan Ni Lin, Dongping Du, Nandini Nair"
+    )
+
+    def test_authors_parsed_from_summary(self):
+        assert _authors_from_summary(self.SUMMARY) == [
+            "Dan Ni Lin", "Dongping Du", "Nandini Nair",
+        ]
+
+    def test_no_author_line_returns_empty(self):
+        assert _authors_from_summary("Just a normal abstract with no author line.") == []
+
+    def test_preamble_stripped_leaving_real_abstract(self):
+        text = self.SUMMARY + "\n\nThis is the genuine abstract body."
+        assert _strip_metadata_preamble(text) == "This is the genuine abstract body."
+
+    def test_metadata_only_summary_strips_to_empty(self):
+        assert _strip_metadata_preamble(self.SUMMARY) == ""
 
 
 class TestLoadFeedConfigs:

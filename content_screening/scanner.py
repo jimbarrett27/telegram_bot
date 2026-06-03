@@ -16,6 +16,7 @@ from content_screening.database import (
     update_scan_history,
 )
 from content_screening.db_engine import get_session
+from content_screening.embeddings import compute_article_embedding
 from content_screening.models import Article, SourceType
 from content_screening.orm_models import ArticleORM
 from content_screening.rss_feed import fetch_rss_articles
@@ -44,6 +45,11 @@ def process_new_articles(articles: List[Article]) -> tuple[int, int]:
         article.llm_reasoning = reasoning
         article.llm_tags = tags
         article.suggested_depth = suggested_depth
+
+        # Embed every article (relevant or not) to accumulate feature vectors for
+        # a future supervised relevance model — triage decisions are the labels.
+        # Best-effort: None on failure, never blocks ingestion.
+        article.embedding = compute_article_embedding(article)
 
         # Always insert (relevant ones enter the triage queue; the rest are kept
         # for record-keeping with score 0).
