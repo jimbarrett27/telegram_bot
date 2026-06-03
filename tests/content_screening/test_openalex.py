@@ -232,6 +232,58 @@ class TestFetchOpenalexArticles:
         assert articles[0].surfaced_by == ["institution"]
 
 
+class TestTopicKeywordGate:
+    """Broad (require_keyword) topics need a PV keyword; focused topics don't.
+    Author/citation/institution signals are never gated."""
+
+    @staticmethod
+    def _topic_work(wid: str, topic_id: str, title: str) -> dict:
+        return {
+            "id": f"https://openalex.org/{wid}",
+            "title": title,
+            "publication_date": (date.today() - timedelta(days=1)).isoformat(),
+            "topics": [{"id": f"https://openalex.org/{topic_id}", "display_name": topic_id}],
+            "authorships": [],
+            "primary_location": {},
+        }
+
+    def _run(self, works):
+        cfg = DiscoveryConfig(
+            topics=[
+                {"id": "T13702", "name": "ML", "require_keyword": True},  # broad/gated
+                {"id": "T11943", "name": "PV"},                            # focused/ungated
+            ]
+        )
+
+        def fake_get(path, params, mailto):
+            if params["filter"].startswith("topics.id:"):
+                return _page(works)
+            return _page([])
+
+        with patch("content_screening.openalex._get", side_effect=fake_get):
+            return {a.external_id for a in fetch_openalex_articles(cfg)}
+
+    def test_broad_topic_without_keyword_dropped(self):
+        got = self._run([self._topic_work("W1", "T13702", "Stock price forecasting with neural nets")])
+        assert got == set()
+
+    def test_broad_topic_with_keyword_kept(self):
+        got = self._run([self._topic_work("W2", "T13702", "Drug interaction prediction")])
+        assert got == {"W2"}
+
+    def test_focused_topic_without_keyword_kept(self):
+        got = self._run([self._topic_work("W3", "T11943", "Patient simulation training")])
+        assert got == {"W3"}
+
+    def test_mixed_batch(self):
+        got = self._run([
+            self._topic_work("W1", "T13702", "Stock price forecasting"),       # gated out
+            self._topic_work("W2", "T13702", "Adverse drug event mining"),     # kept (keyword)
+            self._topic_work("W3", "T11943", "Nurse handover study"),          # kept (focused)
+        ])
+        assert got == {"W2", "W3"}
+
+
 def _today_window():
     from content_screening.constants import SCAN_LOOKBACK_DAYS
 

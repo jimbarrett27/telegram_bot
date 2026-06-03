@@ -8,8 +8,11 @@
 # Contact for the OpenAlex "polite pool" (faster, more reliable rate limits).
 mailto: jimbarrett27@gmail.com
 
-# Topic net (matches ANY assigned topic, not just the primary one -> max recall;
-# the LLM screen filters the extra volume). ~160 papers/day across these four.
+# Topic net (matches ANY assigned topic, not just the primary one). The two
+# focused PV topics are kept ungated; the broad AI/ML-in-healthcare topics are
+# gated with `require_keyword: true` so a work only counts if it ALSO matches a
+# PV keyword (otherwise generic ML papers flood in). Author/citation/institution
+# signals are never keyword-gated.
 topics:
   - id: T11943
     name: Pharmacovigilance and Adverse Drug Reactions
@@ -17,8 +20,10 @@ topics:
     name: Patient Safety and Medication Errors
   - id: T13702
     name: Machine Learning in Healthcare
+    require_keyword: true
   - id: T11396
     name: Artificial Intelligence in Healthcare
+    require_keyword: true
 
 # Authors to follow. Accepts OpenAlex author IDs (start with "A") and/or ORCIDs
 # (the 0000-0000-0000-0000 form). Find an ID via

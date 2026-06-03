@@ -337,6 +337,21 @@ def _institution_citers(cfg: DiscoveryConfig, from_date: str) -> Iterator[tuple[
         yield from _citers_of(seed_ids, cfg, from_date, "institution")
 
 
+def _topic_gated_out(
+    article: Article, configured_topic_ids: set, focused_topic_ids: set
+) -> bool:
+    """Whether a topic-surfaced work should be dropped by the keyword gate.
+
+    Dropped iff it matched *only* gated (broad) topics — none of the focused,
+    ungated topics — and carries no PV keyword. Works that match a focused topic
+    are always kept; works with a keyword are always kept.
+    """
+    matched = set(article.metadata.get("topic_ids") or []) & configured_topic_ids
+    if matched & focused_topic_ids:
+        return False  # matched a focused topic -> ungated
+    return not article.keywords_matched
+
+
 # --- Public entry point -----------------------------------------------------
 
 
@@ -355,6 +370,15 @@ def fetch_openalex_articles(
         config = load_discovery_config()
 
     from_date = _from_date(lookback_days)
+
+    # Topic keyword gate: works surfaced *only* by a broad (require_keyword) topic
+    # must also match a PV keyword; works matching a focused topic are ungated.
+    # Author/citation/institution signals are never gated.
+    configured_topic_ids = {t["id"] for t in config.topics if t.get("id")}
+    gated_topic_ids = {
+        t["id"] for t in config.topics if t.get("id") and t.get("require_keyword")
+    }
+    focused_topic_ids = configured_topic_ids - gated_topic_ids
     signal_streams = (
         _topic_works(config, from_date),
         _author_works(config, from_date),
@@ -375,8 +399,13 @@ def fetch_openalex_articles(
                         existing.surfaced_by.append(signal)
                     continue
                 article = _work_to_article(work, [signal])
-                if article is not None:
-                    by_id[work_id] = article
+                if article is None:
+                    continue
+                if signal == "topic" and _topic_gated_out(
+                    article, configured_topic_ids, focused_topic_ids
+                ):
+                    continue
+                by_id[work_id] = article
         except requests.RequestException as exc:
             logger.error("OpenAlex fetch failed for a signal stream: %s", exc)
 
