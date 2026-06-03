@@ -79,9 +79,11 @@ class ArticleORM(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     abstract: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     url: Mapped[str] = mapped_column(Text, nullable=False)
+    doi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     authors: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
     categories: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
     keywords_matched: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
+    surfaced_by: Mapped[List[str]] = mapped_column(JSONEncodedList, nullable=True)
     discovered_at: Mapped[int] = mapped_column(Integer, nullable=False)
     llm_interest_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     llm_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -109,6 +111,7 @@ class ArticleORM(Base):
         UniqueConstraint("source_type", "external_id", name="uq_source_external"),
         Index("idx_articles_source_type", "source_type"),
         Index("idx_articles_discovered_at", "discovered_at"),
+        Index("idx_articles_doi", "doi"),
         Index("idx_articles_status", "status", "discovered_at"),
         Index(
             "idx_articles_retry",
@@ -163,9 +166,11 @@ def article_orm_to_dataclass(orm: ArticleORM) -> Article:
         title=orm.title,
         abstract=orm.abstract,
         url=orm.url,
+        doi=orm.doi,
         authors=orm.authors or [],
         categories=orm.categories or [],
         keywords_matched=orm.keywords_matched or [],
+        surfaced_by=orm.surfaced_by or [],
         discovered_at=orm.discovered_at,
         llm_interest_score=orm.llm_interest_score,
         llm_reasoning=orm.llm_reasoning,
@@ -184,9 +189,11 @@ def article_dataclass_to_orm(article: Article, discovered_at: int) -> ArticleORM
         title=article.title,
         abstract=article.abstract,
         url=article.url,
+        doi=article.doi,
         authors=article.authors if article.authors else None,
         categories=article.categories if article.categories else None,
         keywords_matched=article.keywords_matched if article.keywords_matched else None,
+        surfaced_by=article.surfaced_by if article.surfaced_by else None,
         discovered_at=discovered_at,
         llm_interest_score=article.llm_interest_score,
         llm_reasoning=article.llm_reasoning,

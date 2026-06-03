@@ -3,14 +3,16 @@ Daily scan orchestration for content screening.
 """
 
 import time
-from typing import List
+from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select
 
 from content_screening.arxiv_feed import fetch_arxiv_papers
 from content_screening.constants import SCAN_INTERVAL_SECONDS
 from content_screening.database import (
-    article_exists,
+    add_to_dedup_index,
+    is_duplicate,
+    load_dedup_index,
     get_last_scan_time,
     insert_article,
     update_scan_history,
@@ -18,6 +20,7 @@ from content_screening.database import (
 from content_screening.db_engine import get_session
 from content_screening.embeddings import compute_article_embedding
 from content_screening.models import Article, SourceType
+from content_screening.openalex import fetch_openalex_articles
 from content_screening.orm_models import ArticleORM
 from content_screening.rss_feed import fetch_rss_articles
 from content_screening.screener import screen_article
@@ -26,18 +29,28 @@ from util.logging_util import setup_logger
 logger = setup_logger(__name__)
 
 
-def process_new_articles(articles: List[Article]) -> tuple[int, int]:
+def process_new_articles(
+    articles: List[Article],
+    dedup_index: Optional[Tuple[set, set]] = None,
+) -> tuple[int, int]:
     """Screen new (unseen) articles with the LLM and insert them.
+
+    Deduplication is cross-source: a paper already present from a different feed
+    (matched by DOI, or normalized title as a fallback) is skipped. Pass a shared
+    ``dedup_index`` (``(doi_set, title_set)``) when scanning multiple sources in
+    one run so duplicates are caught across them; otherwise one is loaded here.
 
     Triage replaces the old per-article Telegram notifications, so nothing is
     sent here — papers simply land in the DB for the triage queue. Returns
     ``(new_inserted, new_relevant)``.
     """
+    doi_set, title_set = dedup_index if dedup_index is not None else load_dedup_index()
+
     new_inserted = 0
     new_relevant = 0
     for article in articles:
-        if article_exists(article.source_type, article.external_id):
-            logger.debug(f"Article already exists: {article.external_id}")
+        if is_duplicate(article, doi_set, title_set):
+            logger.debug(f"Duplicate article skipped: {article.external_id}")
             continue
 
         is_relevant, score, reasoning, tags, suggested_depth = screen_article(article)
@@ -54,6 +67,8 @@ def process_new_articles(articles: List[Article]) -> tuple[int, int]:
         # Always insert (relevant ones enter the triage queue; the rest are kept
         # for record-keeping with score 0).
         article.id = insert_article(article)
+        # Record identity so later candidates in this run dedup against it.
+        add_to_dedup_index(article, doi_set, title_set)
         new_inserted += 1
         if is_relevant:
             new_relevant += 1
@@ -61,25 +76,36 @@ def process_new_articles(articles: List[Article]) -> tuple[int, int]:
     return new_inserted, new_relevant
 
 
-def run_arxiv_scan() -> tuple[int, int, int]:
+def run_arxiv_scan(dedup_index: Optional[Tuple[set, set]] = None) -> tuple[int, int, int]:
     """Scan ArXiv feeds. Returns (total_found, new_inserted, new_relevant)."""
     logger.info("Starting ArXiv scan")
     articles = fetch_arxiv_papers()
     total_found = len(articles)
-    new_inserted, new_relevant = process_new_articles(articles)
+    new_inserted, new_relevant = process_new_articles(articles, dedup_index)
     update_scan_history(SourceType.ARXIV, total_found, new_relevant)
     logger.info(f"ArXiv scan complete: {total_found} found, {new_inserted} new, {new_relevant} relevant")
     return total_found, new_inserted, new_relevant
 
 
-def run_rss_scan() -> tuple[int, int, int]:
+def run_rss_scan(dedup_index: Optional[Tuple[set, set]] = None) -> tuple[int, int, int]:
     """Scan RSS feeds. Returns (total_found, new_inserted, new_relevant)."""
     logger.info("Starting RSS scan")
     articles = fetch_rss_articles()
     total_found = len(articles)
-    new_inserted, new_relevant = process_new_articles(articles)
+    new_inserted, new_relevant = process_new_articles(articles, dedup_index)
     update_scan_history(SourceType.RSS, total_found, new_relevant)
     logger.info(f"RSS scan complete: {total_found} found, {new_inserted} new, {new_relevant} relevant")
+    return total_found, new_inserted, new_relevant
+
+
+def run_openalex_scan(dedup_index: Optional[Tuple[set, set]] = None) -> tuple[int, int, int]:
+    """Scan OpenAlex. Returns (total_found, new_inserted, new_relevant)."""
+    logger.info("Starting OpenAlex scan")
+    articles = fetch_openalex_articles()
+    total_found = len(articles)
+    new_inserted, new_relevant = process_new_articles(articles, dedup_index)
+    update_scan_history(SourceType.OPENALEX, total_found, new_relevant)
+    logger.info(f"OpenAlex scan complete: {total_found} found, {new_inserted} new, {new_relevant} relevant")
     return total_found, new_inserted, new_relevant
 
 
@@ -94,12 +120,18 @@ def count_pending_triage() -> int:
 
 
 def run_full_scan() -> dict:
-    """Run all source scans (silently) and return summary counts."""
-    _, a_new, a_rel = run_arxiv_scan()
-    _, r_new, r_rel = run_rss_scan()
+    """Run all source scans (silently) and return summary counts.
+
+    A single dedup index is shared across the sources so the same paper arriving
+    from more than one feed in this run is inserted only once.
+    """
+    dedup_index = load_dedup_index()
+    _, a_new, a_rel = run_arxiv_scan(dedup_index)
+    _, r_new, r_rel = run_rss_scan(dedup_index)
+    _, o_new, o_rel = run_openalex_scan(dedup_index)
     return {
-        "new": a_new + r_new,
-        "relevant": a_rel + r_rel,
+        "new": a_new + r_new + o_new,
+        "relevant": a_rel + r_rel + o_rel,
         "pending": count_pending_triage(),
     }
 

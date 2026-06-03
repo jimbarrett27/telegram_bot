@@ -3,6 +3,7 @@ Constants for the content screening system.
 """
 
 from pathlib import Path
+from typing import List
 
 MODULE_ROOT = Path(__file__).parent
 
@@ -35,6 +36,16 @@ PV_KEYWORDS = {
     "duplic",
     "linkage",
 }
+
+
+def find_matching_keywords(text: str, keywords: set = PV_KEYWORDS) -> List[str]:
+    """Return the keywords that appear (as substrings) in ``text``.
+
+    Shared by all discovery sources (arXiv, RSS, OpenAlex) so the broad keyword
+    recall net behaves identically everywhere.
+    """
+    text_lower = text.lower()
+    return [kw for kw in keywords if kw in text_lower]
 
 # How often to scan feeds (in seconds)
 SCAN_INTERVAL_SECONDS = 24 * 60 * 60  # 24 hours

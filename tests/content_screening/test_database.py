@@ -248,6 +248,119 @@ class TestArticleOperations:
         assert article_exists(SourceType.ARXIV, "same-id")
 
 
+class TestNormalization:
+    """Tests for the cross-source dedup normalization helpers."""
+
+    def test_normalize_doi_strips_prefix_and_lowercases(self):
+        from content_screening.database import normalize_doi
+
+        assert normalize_doi("https://doi.org/10.1234/ABC") == "10.1234/abc"
+        assert normalize_doi("doi:10.1234/abc") == "10.1234/abc"
+        assert normalize_doi("10.1234/ABC") == "10.1234/abc"
+        assert normalize_doi(None) is None
+        assert normalize_doi("") is None
+
+    def test_normalize_title_decodes_and_strips(self):
+        from content_screening.database import normalize_title
+
+        a = normalize_title("Signal&nbsp;Detection in <em>PV</em>!")
+        b = normalize_title("signal detection in pv")
+        assert a == b
+        assert normalize_title(None) is None
+
+
+class TestCrossSourceDedup:
+    """Tests for DOI-primary / title-fallback cross-source deduplication."""
+
+    def test_is_duplicate_by_doi(self, temp_db):
+        from content_screening.database import (
+            insert_article,
+            load_dedup_index,
+            is_duplicate,
+        )
+
+        insert_article(
+            Article(
+                external_id="arxiv-1",
+                source_type=SourceType.ARXIV,
+                title="Some Title",
+                url="https://arxiv.org/abs/1",
+                doi="10.1234/xyz",
+            )
+        )
+        doi_set, title_set = load_dedup_index()
+
+        # Same DOI, different source/title -> duplicate.
+        incoming = Article(
+            external_id="W9",
+            source_type=SourceType.OPENALEX,
+            title="A Completely Different Title",
+            url="https://openalex.org/W9",
+            doi="https://doi.org/10.1234/XYZ",
+        )
+        assert is_duplicate(incoming, doi_set, title_set) is True
+
+    def test_is_duplicate_by_title_when_no_doi(self, temp_db):
+        from content_screening.database import (
+            insert_article,
+            load_dedup_index,
+            is_duplicate,
+        )
+
+        insert_article(
+            Article(
+                external_id="rss-1",
+                source_type=SourceType.RSS,
+                title="Attention Is All You Need",
+                url="https://example.com/1",
+            )
+        )
+        doi_set, title_set = load_dedup_index()
+
+        incoming = Article(
+            external_id="W7",
+            source_type=SourceType.OPENALEX,
+            title="attention is all you need",  # title bridge, no DOI either side
+            url="https://openalex.org/W7",
+        )
+        assert is_duplicate(incoming, doi_set, title_set) is True
+
+    def test_not_duplicate_when_distinct(self, temp_db):
+        from content_screening.database import load_dedup_index, is_duplicate
+
+        doi_set, title_set = load_dedup_index()
+        incoming = Article(
+            external_id="W1",
+            source_type=SourceType.OPENALEX,
+            title="A novel method",
+            url="https://openalex.org/W1",
+            doi="10.9999/new",
+        )
+        assert is_duplicate(incoming, doi_set, title_set) is False
+
+    def test_add_to_dedup_index_catches_within_run(self):
+        from content_screening.database import add_to_dedup_index, is_duplicate
+
+        doi_set, title_set = set(), set()
+        first = Article(
+            external_id="W1",
+            source_type=SourceType.OPENALEX,
+            title="Shared Title",
+            url="u",
+            doi="10.1/a",
+        )
+        add_to_dedup_index(first, doi_set, title_set)
+
+        same_by_doi = Article(
+            external_id="rss-1",
+            source_type=SourceType.RSS,
+            title="other",
+            url="u",
+            doi="10.1/a",
+        )
+        assert is_duplicate(same_by_doi, doi_set, title_set) is True
+
+
 class TestRatingOperations:
     """Tests for article rating operations."""
 

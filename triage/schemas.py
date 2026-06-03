@@ -39,6 +39,9 @@ class PaperOut(BaseModel):
     # The "why this surfaced" reason shown on the card.
     llm_reasoning: str | None
     llm_tags: list[str]
+    # Discovery signal(s) that surfaced the paper: 'keyword' | 'topic' |
+    # 'author' | 'citation' | 'institution'.
+    surfaced_by: list[str]
     # Screener routing hint: 'deep' | 'skim' | 'file'.
     suggested_depth: str | None
     status: str
@@ -69,6 +72,7 @@ class PaperOut(BaseModel):
             llm_interest_score=article.llm_interest_score,
             llm_reasoning=article.llm_reasoning,
             llm_tags=article.llm_tags or [],
+            surfaced_by=article.surfaced_by or [],
             suggested_depth=article.suggested_depth,
             status=article.status,
             decided_at=article.decided_at,

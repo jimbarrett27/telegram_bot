@@ -63,13 +63,21 @@ async def handle_scan_async(
     Args:
         update: Telegram update object
         context: Telegram context
-        scan_type: "arxiv", "rss", or "all"
+        scan_type: "arxiv", "rss", "openalex", or "all"
     """
-    from content_screening.scanner import run_arxiv_scan, run_rss_scan
+    from content_screening.database import load_dedup_index
+    from content_screening.scanner import (
+        run_arxiv_scan,
+        run_openalex_scan,
+        run_rss_scan,
+    )
 
     init_db()
 
     results = []
+    # Share one dedup index across sources so a paper from multiple feeds in this
+    # run is inserted once (matches run_full_scan).
+    dedup_index = load_dedup_index()
 
     try:
         if scan_type in ("arxiv", "all"):
@@ -77,7 +85,7 @@ async def handle_scan_async(
                 "Starting ArXiv scan...",
                 reply_markup=MAIN_MENU_KEYBOARD,
             )
-            total, new, relevant = run_arxiv_scan()
+            total, new, relevant = run_arxiv_scan(dedup_index)
             results.append(f"ArXiv: {total} found, {new} new, {relevant} relevant")
 
         if scan_type in ("rss", "all"):
@@ -85,8 +93,16 @@ async def handle_scan_async(
                 "Starting RSS scan...",
                 reply_markup=MAIN_MENU_KEYBOARD,
             )
-            total, new, relevant = run_rss_scan()
+            total, new, relevant = run_rss_scan(dedup_index)
             results.append(f"RSS: {total} found, {new} new, {relevant} relevant")
+
+        if scan_type in ("openalex", "all"):
+            await update.message.reply_text(
+                "Starting OpenAlex scan...",
+                reply_markup=MAIN_MENU_KEYBOARD,
+            )
+            total, new, relevant = run_openalex_scan(dedup_index)
+            results.append(f"OpenAlex: {total} found, {new} new, {relevant} relevant")
 
         await update.message.reply_text(
             "Scan complete!\n" + "\n".join(results),

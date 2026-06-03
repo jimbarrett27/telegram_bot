@@ -14,7 +14,12 @@ import feedparser  # type: ignore
 import yaml
 from html2text import html2text
 
-from content_screening.constants import MODULE_ROOT, PV_KEYWORDS, SCAN_LOOKBACK_DAYS
+from content_screening.constants import (
+    MODULE_ROOT,
+    PV_KEYWORDS,
+    SCAN_LOOKBACK_DAYS,
+    find_matching_keywords,
+)
 from content_screening.models import Article, SourceType
 from util.logging_util import setup_logger
 
@@ -99,6 +104,19 @@ def _extract_authors(entry: dict) -> List[str]:
     return []
 
 
+# Many journal RSS links ARE DOIs (e.g. Wiley: https://doi.org/10.1111/...).
+# Extracting it gives a cross-source dedup key for free.
+_DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+")
+
+
+def _doi_from_link(link: str) -> Optional[str]:
+    """Pull a normalized DOI out of an RSS link, if it contains one."""
+    if not link:
+        return None
+    match = _DOI_RE.search(link)
+    return match.group(0).lower() if match else None
+
+
 def _extract_summary(entry: dict) -> str:
     """Extract and clean summary/description from an RSS entry."""
     summary = entry.get("summary", "") or entry.get("description", "")
@@ -133,9 +151,8 @@ def _strip_metadata_preamble(text: str) -> str:
 
 
 def _find_matching_keywords(text: str) -> List[str]:
-    """Find PV keywords that match in the given text."""
-    text_lower = text.lower()
-    return [kw for kw in PV_KEYWORDS if kw in text_lower]
+    """Find PV keywords that match in the given text (delegates to the shared helper)."""
+    return find_matching_keywords(text, PV_KEYWORDS)
 
 
 def _is_recent(entry: dict, lookback_days: int = SCAN_LOOKBACK_DAYS) -> bool:
@@ -233,10 +250,12 @@ def fetch_rss_articles(
                 source_type=SourceType.RSS,
                 title=title,
                 abstract=abstract,
+                doi=_doi_from_link(link),
                 url=link,
                 authors=authors,
                 categories=[feed_config.name],
                 keywords_matched=matching_keywords,
+                surfaced_by=["keyword"] if matching_keywords else [],
                 discovered_at=discovered_at,
                 metadata={
                     "feed_url": feed_config.url,

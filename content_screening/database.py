@@ -5,8 +5,10 @@ Uses SQLAlchemy ORM for database access. The public API uses dataclass models
 from models.py, with conversion to/from ORM models handled internally.
 """
 
+import html
+import re
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import select, exists
 
@@ -29,6 +31,84 @@ def init_db():
     """Initialize the database schema."""
     engine = get_engine()
     Base.metadata.create_all(engine)
+
+
+# --- Cross-source deduplication ---------------------------------------------
+#
+# The unique constraint (source_type, external_id) only stops re-inserting the
+# SAME paper from the SAME source. The same paper arriving from arXiv, a journal
+# RSS feed and OpenAlex gets three different external_ids, so we dedup on a
+# source-independent identity: DOI first (robust), normalized title as fallback
+# (the only reliable arXiv<->OpenAlex bridge).
+
+_TITLE_PUNCT_RE = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_doi(doi: Optional[str]) -> Optional[str]:
+    """Normalize a DOI to a bare lowercase identifier (no URL prefix)."""
+    if not doi:
+        return None
+    doi = doi.strip().lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if doi.startswith(prefix):
+            doi = doi[len(prefix):]
+            break
+    return doi or None
+
+
+def normalize_title(title: Optional[str]) -> Optional[str]:
+    """Normalize a title for fuzzy identity: decode HTML entities, lowercase,
+    collapse all non-alphanumeric runs to single spaces."""
+    if not title:
+        return None
+    text = html.unescape(title)
+    # Drop HTML tags that sometimes survive in feed titles (e.g. <em>...</em>).
+    text = re.sub(r"<[^>]+>", "", text)
+    text = _TITLE_PUNCT_RE.sub(" ", text.lower()).strip()
+    return text or None
+
+
+def load_dedup_index() -> Tuple[set, set]:
+    """Load existing articles' normalized DOIs and titles into in-memory sets.
+
+    Returns ``(doi_set, title_set)``. A few thousand rows is trivial to hold in
+    memory; this is built once per scan and consulted before each insert.
+    """
+    doi_set: set = set()
+    title_set: set = set()
+    with get_session() as session:
+        rows = session.execute(select(ArticleORM.doi, ArticleORM.title)).all()
+    for doi, title in rows:
+        nd = normalize_doi(doi)
+        if nd:
+            doi_set.add(nd)
+        nt = normalize_title(title)
+        if nt:
+            title_set.add(nt)
+    return doi_set, title_set
+
+
+def is_duplicate(article: Article, doi_set: set, title_set: set) -> bool:
+    """Whether ``article`` matches something already in the dedup index by DOI
+    (primary) or normalized title (fallback)."""
+    nd = normalize_doi(article.doi)
+    if nd and nd in doi_set:
+        return True
+    nt = normalize_title(article.title)
+    if nt and nt in title_set:
+        return True
+    return False
+
+
+def add_to_dedup_index(article: Article, doi_set: set, title_set: set) -> None:
+    """Record an article's identity keys so later candidates in the same run
+    dedup against it (cross-source within a run)."""
+    nd = normalize_doi(article.doi)
+    if nd:
+        doi_set.add(nd)
+    nt = normalize_title(article.title)
+    if nt:
+        title_set.add(nt)
 
 
 def insert_article(article: Article) -> int:

@@ -12,6 +12,7 @@ class SourceType(Enum):
     BLOG = "blog"
     NEWSLETTER = "newsletter"
     RSS = "rss"
+    OPENALEX = "openalex"
 
 
 @dataclass
@@ -23,9 +24,15 @@ class Article:
     url: str
     id: Optional[int] = None
     abstract: Optional[str] = None
+    # Normalized DOI (lowercase, bare identifier — no https://doi.org/ prefix).
+    # Primary cross-source dedup key; populated by OpenAlex, derivable for others.
+    doi: Optional[str] = None
     authors: List[str] = field(default_factory=list)
     categories: List[str] = field(default_factory=list)
     keywords_matched: List[str] = field(default_factory=list)
+    # Which discovery signal(s) surfaced this paper: 'keyword' | 'topic' |
+    # 'author' | 'citation' | 'institution'. A paper can match several.
+    surfaced_by: List[str] = field(default_factory=list)
     discovered_at: int = 0
     llm_interest_score: Optional[float] = None
     llm_reasoning: Optional[str] = None

@@ -14,6 +14,7 @@ from content_screening.constants import (
     INTERESTING_ARXIV_CATEGORIES,
     PV_KEYWORDS,
     SCAN_LOOKBACK_DAYS,
+    find_matching_keywords,
 )
 from content_screening.models import Article, SourceType
 from util.logging_util import setup_logger
@@ -67,9 +68,8 @@ def _extract_authors(entry: dict) -> List[str]:
 
 
 def _find_matching_keywords(text: str) -> List[str]:
-    """Find PV keywords that match in the given text."""
-    text_lower = text.lower()
-    return [kw for kw in PV_KEYWORDS if kw in text_lower]
+    """Find PV keywords that match in the given text (delegates to the shared helper)."""
+    return find_matching_keywords(text, PV_KEYWORDS)
 
 
 def _is_recent(entry: dict, lookback_days: int = SCAN_LOOKBACK_DAYS) -> bool:
@@ -149,10 +149,12 @@ def fetch_arxiv_papers(
                 source_type=SourceType.ARXIV,
                 title=title,
                 abstract=abstract,
+                doi=f"10.48550/arxiv.{re.sub(r'v[0-9]+$', '', paper_id).lower()}",
                 url=make_arxiv_url(paper_id),
                 authors=_extract_authors(entry),
                 categories=[category],
                 keywords_matched=matching_keywords,
+                surfaced_by=["keyword"] if matching_keywords else [],
                 discovered_at=discovered_at,
             )
             articles.append(article)
