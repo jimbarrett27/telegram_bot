@@ -33,15 +33,22 @@ def init_db():
     Base.metadata.create_all(engine)
 
 
-# --- Cross-source deduplication ---------------------------------------------
+# --- Deduplication ----------------------------------------------------------
 #
-# The unique constraint (source_type, external_id) only stops re-inserting the
-# SAME paper from the SAME source. The same paper arriving from arXiv, a journal
-# RSS feed and OpenAlex gets three different external_ids, so we dedup on a
-# source-independent identity: DOI first (robust), normalized title as fallback
-# (the only reliable arXiv<->OpenAlex bridge).
+# The dedup index holds three identity keys so a paper is skipped before insert:
+#   1. (source_type, external_id) -- the AUTHORITATIVE same-source key (matches
+#      the table's unique constraint). Always works, even with no DOI/title.
+#   2. normalized DOI -- the robust cross-source key (same paper from arXiv / a
+#      journal RSS feed / OpenAlex gets different external_ids but one DOI).
+#   3. normalized title -- cross-source fallback when a DOI is absent (the only
+#      reliable arXiv<->OpenAlex bridge).
+# Without (1), a re-scanned paper that has no DOI and a title that normalizes to
+# nothing (e.g. an all-Cyrillic title) would slip past (2)/(3) and hit the unique
+# constraint on insert.
 
-_TITLE_PUNCT_RE = re.compile(r"[^a-z0-9]+")
+# Keep Unicode word characters (so non-Latin titles don't collapse to empty);
+# everything else (punctuation, whitespace) becomes a single space.
+_TITLE_NONWORD_RE = re.compile(r"[^\w]+", re.UNICODE)
 
 
 def normalize_doi(doi: Optional[str]) -> Optional[str]:
@@ -57,40 +64,57 @@ def normalize_doi(doi: Optional[str]) -> Optional[str]:
 
 
 def normalize_title(title: Optional[str]) -> Optional[str]:
-    """Normalize a title for fuzzy identity: decode HTML entities, lowercase,
-    collapse all non-alphanumeric runs to single spaces."""
+    """Normalize a title for fuzzy identity: decode HTML entities, drop tags,
+    lowercase, and collapse non-word runs to single spaces. Unicode-aware so
+    non-Latin titles still yield a usable key."""
     if not title:
         return None
     text = html.unescape(title)
     # Drop HTML tags that sometimes survive in feed titles (e.g. <em>...</em>).
     text = re.sub(r"<[^>]+>", "", text)
-    text = _TITLE_PUNCT_RE.sub(" ", text.lower()).strip()
+    text = _TITLE_NONWORD_RE.sub(" ", text.lower()).strip()
     return text or None
 
 
-def load_dedup_index() -> Tuple[set, set]:
-    """Load existing articles' normalized DOIs and titles into in-memory sets.
+def _article_key(source_type, external_id) -> tuple:
+    """The (source_type, external_id) identity tuple, source_type as its value."""
+    st = source_type.value if isinstance(source_type, SourceType) else source_type
+    return (st, external_id)
 
-    Returns ``(doi_set, title_set)``. A few thousand rows is trivial to hold in
-    memory; this is built once per scan and consulted before each insert.
+
+def load_dedup_index() -> Tuple[set, set, set]:
+    """Load existing articles' identity keys into in-memory sets.
+
+    Returns ``(doi_set, title_set, id_set)`` where ``id_set`` holds
+    ``(source_type, external_id)`` tuples. A few thousand rows is trivial to hold
+    in memory; built once per scan and consulted before each insert.
     """
     doi_set: set = set()
     title_set: set = set()
+    id_set: set = set()
     with get_session() as session:
-        rows = session.execute(select(ArticleORM.doi, ArticleORM.title)).all()
-    for doi, title in rows:
+        rows = session.execute(
+            select(
+                ArticleORM.doi, ArticleORM.title,
+                ArticleORM.source_type, ArticleORM.external_id,
+            )
+        ).all()
+    for doi, title, source_type, external_id in rows:
         nd = normalize_doi(doi)
         if nd:
             doi_set.add(nd)
         nt = normalize_title(title)
         if nt:
             title_set.add(nt)
-    return doi_set, title_set
+        id_set.add(_article_key(source_type, external_id))
+    return doi_set, title_set, id_set
 
 
-def is_duplicate(article: Article, doi_set: set, title_set: set) -> bool:
-    """Whether ``article`` matches something already in the dedup index by DOI
-    (primary) or normalized title (fallback)."""
+def is_duplicate(article: Article, doi_set: set, title_set: set, id_set: set) -> bool:
+    """Whether ``article`` is already known, by exact (source, external_id) key
+    (authoritative), then DOI, then normalized title (cross-source)."""
+    if _article_key(article.source_type, article.external_id) in id_set:
+        return True
     nd = normalize_doi(article.doi)
     if nd and nd in doi_set:
         return True
@@ -100,9 +124,10 @@ def is_duplicate(article: Article, doi_set: set, title_set: set) -> bool:
     return False
 
 
-def add_to_dedup_index(article: Article, doi_set: set, title_set: set) -> None:
+def add_to_dedup_index(article: Article, doi_set: set, title_set: set, id_set: set) -> None:
     """Record an article's identity keys so later candidates in the same run
-    dedup against it (cross-source within a run)."""
+    dedup against it (within-run, across sources)."""
+    id_set.add(_article_key(article.source_type, article.external_id))
     nd = normalize_doi(article.doi)
     if nd:
         doi_set.add(nd)

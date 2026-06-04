@@ -6,6 +6,7 @@ import time
 from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from content_screening.arxiv_feed import fetch_arxiv_papers
 from content_screening.constants import SCAN_INTERVAL_SECONDS
@@ -44,12 +45,14 @@ def process_new_articles(
     sent here — papers simply land in the DB for the triage queue. Returns
     ``(new_inserted, new_relevant)``.
     """
-    doi_set, title_set = dedup_index if dedup_index is not None else load_dedup_index()
+    doi_set, title_set, id_set = (
+        dedup_index if dedup_index is not None else load_dedup_index()
+    )
 
     new_inserted = 0
     new_relevant = 0
     for article in articles:
-        if is_duplicate(article, doi_set, title_set):
+        if is_duplicate(article, doi_set, title_set, id_set):
             logger.debug(f"Duplicate article skipped: {article.external_id}")
             continue
 
@@ -65,10 +68,17 @@ def process_new_articles(
         article.embedding = compute_article_embedding(article)
 
         # Always insert (relevant ones enter the triage queue; the rest are kept
-        # for record-keeping with score 0).
-        article.id = insert_article(article)
+        # for record-keeping with score 0). Guard the insert so a single stray
+        # duplicate (e.g. a dedup-key miss) can't abort the whole scan and drop
+        # the daily summary message.
+        try:
+            article.id = insert_article(article)
+        except IntegrityError:
+            logger.warning(f"Skipping duplicate on insert: {article.external_id}")
+            add_to_dedup_index(article, doi_set, title_set, id_set)
+            continue
         # Record identity so later candidates in this run dedup against it.
-        add_to_dedup_index(article, doi_set, title_set)
+        add_to_dedup_index(article, doi_set, title_set, id_set)
         new_inserted += 1
         if is_relevant:
             new_relevant += 1

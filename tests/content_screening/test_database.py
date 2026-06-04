@@ -288,7 +288,7 @@ class TestCrossSourceDedup:
                 doi="10.1234/xyz",
             )
         )
-        doi_set, title_set = load_dedup_index()
+        idx = load_dedup_index()
 
         # Same DOI, different source/title -> duplicate.
         incoming = Article(
@@ -298,7 +298,7 @@ class TestCrossSourceDedup:
             url="https://openalex.org/W9",
             doi="https://doi.org/10.1234/XYZ",
         )
-        assert is_duplicate(incoming, doi_set, title_set) is True
+        assert is_duplicate(incoming, *idx) is True
 
     def test_is_duplicate_by_title_when_no_doi(self, temp_db):
         from content_screening.database import (
@@ -315,7 +315,7 @@ class TestCrossSourceDedup:
                 url="https://example.com/1",
             )
         )
-        doi_set, title_set = load_dedup_index()
+        idx = load_dedup_index()
 
         incoming = Article(
             external_id="W7",
@@ -323,12 +323,12 @@ class TestCrossSourceDedup:
             title="attention is all you need",  # title bridge, no DOI either side
             url="https://openalex.org/W7",
         )
-        assert is_duplicate(incoming, doi_set, title_set) is True
+        assert is_duplicate(incoming, *idx) is True
 
     def test_not_duplicate_when_distinct(self, temp_db):
         from content_screening.database import load_dedup_index, is_duplicate
 
-        doi_set, title_set = load_dedup_index()
+        idx = load_dedup_index()
         incoming = Article(
             external_id="W1",
             source_type=SourceType.OPENALEX,
@@ -336,12 +336,12 @@ class TestCrossSourceDedup:
             url="https://openalex.org/W1",
             doi="10.9999/new",
         )
-        assert is_duplicate(incoming, doi_set, title_set) is False
+        assert is_duplicate(incoming, *idx) is False
 
     def test_add_to_dedup_index_catches_within_run(self):
         from content_screening.database import add_to_dedup_index, is_duplicate
 
-        doi_set, title_set = set(), set()
+        idx = (set(), set(), set())
         first = Article(
             external_id="W1",
             source_type=SourceType.OPENALEX,
@@ -349,7 +349,7 @@ class TestCrossSourceDedup:
             url="u",
             doi="10.1/a",
         )
-        add_to_dedup_index(first, doi_set, title_set)
+        add_to_dedup_index(first, *idx)
 
         same_by_doi = Article(
             external_id="rss-1",
@@ -358,7 +358,35 @@ class TestCrossSourceDedup:
             url="u",
             doi="10.1/a",
         )
-        assert is_duplicate(same_by_doi, doi_set, title_set) is True
+        assert is_duplicate(same_by_doi, *idx) is True
+
+    def test_rescan_same_source_no_doi_nonlatin_title(self, temp_db):
+        """The regression: a re-scanned same-source paper with no DOI and a
+        non-Latin title must be caught by the (source, external_id) key."""
+        from content_screening.database import (
+            insert_article,
+            load_dedup_index,
+            is_duplicate,
+        )
+
+        insert_article(
+            Article(
+                external_id="W7162899737",
+                source_type=SourceType.OPENALEX,
+                title="Програмна технологія для кластеризації",  # all-Cyrillic, no DOI
+                url="https://example.org/x",
+            )
+        )
+        idx = load_dedup_index()
+        # Cyrillic title still yields a non-empty normalized key now.
+        assert idx[1], "non-Latin title should normalize to a usable key"
+        rescanned = Article(
+            external_id="W7162899737",
+            source_type=SourceType.OPENALEX,
+            title="Програмна технологія для кластеризації",
+            url="https://example.org/x",
+        )
+        assert is_duplicate(rescanned, *idx) is True
 
 
 class TestRatingOperations:
