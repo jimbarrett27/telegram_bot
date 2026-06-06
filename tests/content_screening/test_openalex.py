@@ -9,6 +9,7 @@ from content_screening.models import Article, SourceType
 from content_screening.openalex import (
     DiscoveryConfig,
     _is_future_date,
+    _low_quality_journal,
     _short_id,
     _work_to_article,
     fetch_openalex_articles,
@@ -282,6 +283,141 @@ class TestTopicKeywordGate:
             self._topic_work("W3", "T11943", "Nurse handover study"),          # kept (focused)
         ])
         assert got == {"W2", "W3"}
+
+
+class TestVenueQualityDrop:
+    """Topic-net works in unvetted *journals* are dropped; preprints and the
+    high-precision signals are spared."""
+
+    @staticmethod
+    def _topic_work_in(wid: str, source: dict | None) -> dict:
+        primary = {"source": source} if source is not None else {}
+        return {
+            "id": f"https://openalex.org/{wid}",
+            "title": "Adverse drug reaction signal detection",  # carries a PV keyword
+            "publication_date": (date.today() - timedelta(days=1)).isoformat(),
+            "topics": [{"id": "https://openalex.org/T11943", "display_name": "PV"}],
+            "authorships": [],
+            "primary_location": primary,
+        }
+
+    def _run(self, works, cfg=None):
+        cfg = cfg or DiscoveryConfig(topics=[{"id": "T11943", "name": "PV"}])
+
+        def fake_get(path, params, mailto):
+            return _page(works)
+
+        with patch("content_screening.openalex._get", side_effect=fake_get):
+            return {a.external_id for a in fetch_openalex_articles(cfg)}
+
+    def test_metadata_carries_venue_quality(self):
+        work = self._topic_work_in(
+            "W1",
+            {"display_name": "Junk J", "type": "journal", "is_core": False, "is_in_doaj": False},
+        )
+        art = _work_to_article(work, ["topic"])
+        assert art.metadata["venue_type"] == "journal"
+        assert art.metadata["venue_is_core"] is False
+        assert art.metadata["venue_is_in_doaj"] is False
+
+    def test_unvetted_journal_dropped(self):
+        got = self._run([self._topic_work_in(
+            "W1", {"display_name": "Junk J", "type": "journal", "is_core": False, "is_in_doaj": False}
+        )])
+        assert got == set()
+
+    def test_core_journal_kept(self):
+        got = self._run([self._topic_work_in(
+            "W2", {"display_name": "Good J", "type": "journal", "is_core": True, "is_in_doaj": False}
+        )])
+        assert got == {"W2"}
+
+    def test_doaj_journal_kept(self):
+        got = self._run([self._topic_work_in(
+            "W3", {"display_name": "OA J", "type": "journal", "is_core": False, "is_in_doaj": True}
+        )])
+        assert got == {"W3"}
+
+    def test_preprint_repository_kept(self):
+        # Repository (preprint) venue, neither core nor DOAJ -> not a journal, kept.
+        got = self._run([self._topic_work_in(
+            "W4", {"display_name": "bioRxiv", "type": "repository", "is_core": False, "is_in_doaj": False}
+        )])
+        assert got == {"W4"}
+
+    def test_missing_venue_kept(self):
+        got = self._run([self._topic_work_in("W5", None)])
+        assert got == {"W5"}
+
+    def test_drop_only_applies_to_topic_signal(self):
+        # Same unvetted-journal work surfaced by a monitored author is kept.
+        work = self._topic_work_in(
+            "W6", {"display_name": "Junk J", "type": "journal", "is_core": False, "is_in_doaj": False}
+        )
+        work["authorships"] = [
+            {"author_position": "first", "author": {"id": "https://openalex.org/A5", "display_name": "A B"}}
+        ]
+        cfg = DiscoveryConfig(
+            topics=[{"id": "T11943", "name": "PV"}],
+            monitored_authors=["A5"],
+        )
+        got = self._run([work], cfg=cfg)
+        assert got == {"W6"}
+
+    def test_helper_default_when_no_flags(self):
+        # Older payloads may omit the flags entirely -> treated as unvetted.
+        art = _work_to_article(
+            self._topic_work_in("W7", {"display_name": "Old J", "type": "journal"}), ["topic"]
+        )
+        assert _low_quality_journal(art) is True
+
+    def test_trusted_publisher_kept_despite_unvetted(self):
+        # A new Nature Portfolio journal: not core, not DOAJ, but reputable publisher.
+        got = self._run([self._topic_work_in(
+            "W8",
+            {
+                "display_name": "npj Digital Public Health",
+                "type": "journal",
+                "is_core": False,
+                "is_in_doaj": False,
+                "host_organization_name": "Nature Portfolio",
+            },
+        )])
+        assert got == {"W8"}
+
+    def test_untrusted_publisher_still_dropped(self):
+        got = self._run([self._topic_work_in(
+            "W9",
+            {
+                "display_name": "Junk J",
+                "type": "journal",
+                "is_core": False,
+                "is_in_doaj": False,
+                "host_organization_name": "Predatory Press Ltd",
+            },
+        )])
+        assert got == set()
+
+    def test_extra_publisher_from_config_kept(self):
+        # An allowlist entry supplied via discovery.yaml extends the defaults.
+        cfg = DiscoveryConfig(
+            topics=[{"id": "T11943", "name": "PV"}],
+            trusted_publishers=["My Society Press"],
+        )
+        got = self._run(
+            [self._topic_work_in(
+                "W10",
+                {
+                    "display_name": "Society J",
+                    "type": "journal",
+                    "is_core": False,
+                    "is_in_doaj": False,
+                    "host_organization_name": "My Society Press",
+                },
+            )],
+            cfg=cfg,
+        )
+        assert got == {"W10"}
 
 
 def _today_window():

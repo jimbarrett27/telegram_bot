@@ -53,6 +53,34 @@ CITES_BATCH = 50  # OpenAlex allows ~50 OR'd ids in a single filter
 # Safety bound so a misconfigured/huge filter can't paginate forever.
 MAX_PAGES = 25
 
+# Reputable publishers whose journals are kept even when OpenAlex has not yet
+# marked them ``is_core`` / ``is_in_doaj`` -- this spares legitimate *new*
+# journals (e.g. a freshly launched npj or BMJ title) from the venue-quality
+# drop. Matched case-insensitively as substrings of the source's
+# ``host_organization_name``, so tokens cover their naming variants
+# ("Springer" -> "Springer Nature", "Springer Science+Business Media").
+DEFAULT_TRUSTED_PUBLISHERS = frozenset(
+    {
+        "elsevier",
+        "springer",
+        "nature",
+        "wiley",
+        "taylor & francis",
+        "informa",
+        "sage",
+        "oxford university press",
+        "cambridge university press",
+        "bmj",
+        "american medical association",
+        "massachusetts medical society",
+        "ieee",
+        "association for computing machinery",
+        "public library of science",  # PLOS
+        "american chemical society",
+        "royal society of chemistry",
+    }
+)
+
 
 # --- Config -----------------------------------------------------------------
 
@@ -66,6 +94,7 @@ class DiscoveryConfig:
     monitored_authors: List[str] = field(default_factory=list)
     seed_papers: List[str] = field(default_factory=list)
     institutions: List[dict] = field(default_factory=list)    # [{id, name, author_positions}]
+    trusted_publishers: List[str] = field(default_factory=list)  # extra allowlist, added to defaults
 
 
 def load_discovery_config(config_path: Path = DISCOVERY_CONFIG_PATH) -> DiscoveryConfig:
@@ -83,6 +112,7 @@ def load_discovery_config(config_path: Path = DISCOVERY_CONFIG_PATH) -> Discover
         monitored_authors=data.get("monitored_authors") or [],
         seed_papers=data.get("seed_papers") or [],
         institutions=data.get("institutions") or [],
+        trusted_publishers=data.get("trusted_publishers") or [],
     )
 
 
@@ -237,6 +267,10 @@ def _work_to_article(work: dict, surfaced_by: List[str]) -> Optional[Article]:
         metadata={
             "openalex_id": work_id,
             "venue": venue,
+            "venue_type": source.get("type"),
+            "venue_is_core": bool(source.get("is_core")),
+            "venue_is_in_doaj": bool(source.get("is_in_doaj")),
+            "venue_publisher": source.get("host_organization_name"),
             "publication_date": publication_date,
             "topic_ids": topic_ids,
             "authorships": rich_authors,
@@ -337,6 +371,35 @@ def _institution_citers(cfg: DiscoveryConfig, from_date: str) -> Iterator[tuple[
         yield from _citers_of(seed_ids, cfg, from_date, "institution")
 
 
+def _publisher_trusted(publisher: Optional[str], trusted: frozenset) -> bool:
+    """Whether ``publisher`` matches any allowlisted token (case-insensitive substring)."""
+    if not publisher:
+        return False
+    name = publisher.lower()
+    return any(token in name for token in trusted)
+
+
+def _low_quality_journal(
+    article: Article, trusted_publishers: frozenset = DEFAULT_TRUSTED_PUBLISHERS
+) -> bool:
+    """Whether the work's venue is a journal that clears no quality bar.
+
+    A drop target iff the primary venue is a *journal* (``type == "journal"``)
+    that is neither in OpenAlex's ``is_core`` collection nor listed in DOAJ
+    (``is_in_doaj``), *and* whose publisher is not in ``trusted_publishers``.
+    The publisher allowlist spares legitimate new journals not yet flagged by
+    OpenAlex. Works with no venue, or non-journal venues — preprint
+    repositories, conferences, book series — are never low-quality by this
+    rule, so preprint discovery is left untouched.
+    """
+    md = article.metadata
+    if md.get("venue_type") != "journal":
+        return False
+    if md.get("venue_is_core") or md.get("venue_is_in_doaj"):
+        return False
+    return not _publisher_trusted(md.get("venue_publisher"), trusted_publishers)
+
+
 def _topic_gated_out(
     article: Article, configured_topic_ids: set, focused_topic_ids: set
 ) -> bool:
@@ -379,6 +442,11 @@ def fetch_openalex_articles(
         t["id"] for t in config.topics if t.get("id") and t.get("require_keyword")
     }
     focused_topic_ids = configured_topic_ids - gated_topic_ids
+
+    # Baked-in reputable publishers, extended by any in discovery.yaml.
+    trusted_publishers = DEFAULT_TRUSTED_PUBLISHERS | {
+        p.strip().lower() for p in config.trusted_publishers if p and p.strip()
+    }
     signal_streams = (
         _topic_works(config, from_date),
         _author_works(config, from_date),
@@ -401,10 +469,21 @@ def fetch_openalex_articles(
                 article = _work_to_article(work, [signal])
                 if article is None:
                     continue
-                if signal == "topic" and _topic_gated_out(
-                    article, configured_topic_ids, focused_topic_ids
-                ):
-                    continue
+                if signal == "topic":
+                    # The broad topic net is the noisy one: drop low-quality
+                    # journals here, but leave the high-precision author /
+                    # citation / institution signals to surface them anyway.
+                    if _low_quality_journal(article, trusted_publishers):
+                        logger.debug(
+                            "Dropping topic work %s from low-quality venue %r",
+                            work_id,
+                            article.metadata.get("venue"),
+                        )
+                        continue
+                    if _topic_gated_out(
+                        article, configured_topic_ids, focused_topic_ids
+                    ):
+                        continue
                 by_id[work_id] = article
         except requests.RequestException as exc:
             logger.error("OpenAlex fetch failed for a signal stream: %s", exc)
