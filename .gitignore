@@ -2,6 +2,7 @@
 build/
 *.db
 *.db.bak
+*.db.bak-*
 instructions.md
 .hypothesis/
 dnd/adventures/
