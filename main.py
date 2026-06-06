@@ -24,9 +24,19 @@ from content_screening.scanner import run_full_scan, format_scan_summary
 from tapestry.daily import daily_tapestry_task
 from telegram_bot.telegram_bot import TelegramBot
 from util.logging_util import setup_logger, log_telegram_message_received
-from util.timezone import stockholm_time
+from util.timezone import stockholm_time, stockholm_now
 
 logger = setup_logger(__name__)
+
+# Days for run_daily jobs that should skip weekends. PTB maps 0-6 to
+# sunday-saturday, so Monday-Friday is (1, 2, 3, 4, 5).
+WEEKDAYS = (1, 2, 3, 4, 5)
+
+
+def is_weekend() -> bool:
+    """True if it's currently Saturday or Sunday in Stockholm."""
+    # datetime.weekday(): Monday=0 ... Saturday=5, Sunday=6.
+    return stockholm_now().weekday() >= 5
 
 
 # --- Swedish bot handlers ---
@@ -120,9 +130,15 @@ async def daily_paper_scan_task(context: ContextTypes.DEFAULT_TYPE) -> None:
     The scan does blocking network + LLM work, so it runs in a worker thread to
     avoid stalling the bots' event loop. Per-paper notifications are intentionally
     gone — papers flow silently into the triage queue; this is the only message.
+
+    The scan runs every day so papers keep flowing into the triage queue, but the
+    summary message is suppressed on weekends.
     """
     try:
         counts = await asyncio.to_thread(run_full_scan)
+        if is_weekend():
+            logger.info("Weekend — paper scan ran but summary message suppressed.")
+            return
         context.bot_data["minecraft_bot"].send_message_to_me(format_scan_summary(counts))
     except Exception as e:
         logger.error(f"Error in daily paper scan: {e}")
@@ -169,7 +185,7 @@ def build_photos_app() -> Application:
 def build_memes_app() -> Application:
     app = Application.builder().token(get_memes_bot_key()).build()
     if app.job_queue:
-        app.job_queue.run_daily(send_daily_hn_meme, time=stockholm_time(9, 45))
+        app.job_queue.run_daily(send_daily_hn_meme, time=stockholm_time(9, 45), days=WEEKDAYS)
     else:
         logger.warning("JobQueue not available - daily meme disabled.")
     return app
@@ -192,7 +208,7 @@ def build_minecraft_app() -> Application:
         # app.job_queue.run_daily(daily_summary_task, time=dt_time(hour=10, minute=0))
         # Daily paper feed scan → one summary message (triage replaces the
         # old per-paper Telegram notifications).
-        app.job_queue.run_daily(daily_paper_scan_task, time=stockholm_time(8, 0))
+        app.job_queue.run_daily(daily_paper_scan_task, time=stockholm_time(7, 30))
         # Daily news-tapestry panel → generated + uploaded to GCS for the website.
         app.job_queue.run_daily(daily_tapestry_task, time=stockholm_time(8, 30))
     else:
