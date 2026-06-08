@@ -1,4 +1,4 @@
-"""Tests for the Zotero pusher and `deep` decision routing (build step 7).
+"""Tests for the Zotero pusher and `kept` decision routing (build step 7).
 
 ``pyzotero`` and the GCP secret fetch are mocked throughout — no network or
 credentials are touched.
@@ -75,7 +75,7 @@ def test_push_paper_builds_template_and_returns_key(fake_zot):
     assert item["title"] == "A Great Paper, About Things!"
     assert item["abstractNote"] == "An abstract."
     assert item["url"] == "https://arxiv.org/abs/2401.00001"
-    assert item["tags"] == [{"tag": "triage/deep"}]
+    assert item["tags"] == [{"tag": "triage/kept"}]
     assert item["archiveID"] == "2401.00001"
     assert {"creatorType": "author", "firstName": "Alan", "lastName": "Turing"} in item[
         "creators"

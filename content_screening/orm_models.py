@@ -97,7 +97,12 @@ class ArticleORM(Base):
     # --- Triage fields (consumed by the triage UI; the Telegram bot ignores them) ---
     # Screening LLM routing hint: 'file' | 'skim' | 'deep'.
     suggested_depth: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # Triage decision lifecycle: 'pending' | 'deep' | 'filed' | 'dismissed'.
+    # Triage decision lifecycle:
+    #   'pending'       – awaiting user decision (relevant papers only)
+    #   'kept'          – user kept it → Zotero + Obsidian
+    #   'dismissed'     – user rejected it
+    #   'auto_rejected' – LLM screened out (score 0), never shown to user
+    # Legacy values 'deep' / 'filed' map to 'kept' (Chunk C migration).
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     decided_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     zotero_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -181,7 +186,9 @@ def article_orm_to_dataclass(orm: ArticleORM) -> Article:
     )
 
 
-def article_dataclass_to_orm(article: Article, discovered_at: int) -> ArticleORM:
+def article_dataclass_to_orm(
+    article: Article, discovered_at: int, status: str = "pending"
+) -> ArticleORM:
     """Convert an Article dataclass to an ArticleORM instance."""
     return ArticleORM(
         external_id=article.external_id,
@@ -201,6 +208,7 @@ def article_dataclass_to_orm(article: Article, discovered_at: int) -> ArticleORM
         suggested_depth=article.suggested_depth,
         embedding=article.embedding,
         metadata_=article.metadata if article.metadata else None,
+        status=status,
     )
 
 

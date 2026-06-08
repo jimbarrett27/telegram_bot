@@ -35,11 +35,12 @@ def get_pending_papers(
 
 
 def get_decided_papers(session: Session, limit: int = 200) -> list[ArticleORM]:
-    """Papers that have been triaged (any non-pending status), newest decision
-    first. Powers the history view."""
+    """Papers that have been triaged by the user (kept or dismissed), newest
+    decision first. Powers the history view. Excludes ``pending`` and
+    ``auto_rejected`` rows — those are pipeline artefacts, not user decisions."""
     stmt = (
         select(ArticleORM)
-        .where(ArticleORM.status != "pending")
+        .where(ArticleORM.status.notin_(["pending", "auto_rejected"]))
         .order_by(ArticleORM.decided_at.desc())
         .limit(limit)
     )

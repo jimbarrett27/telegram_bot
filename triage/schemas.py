@@ -15,13 +15,7 @@ from pydantic import BaseModel
 from content_screening.orm_models import ArticleORM
 
 # A triage decision. The value doubles as the resulting paper `status`.
-Decision = Literal["deep", "filed", "dismissed"]
-
-
-class DecideRequest(BaseModel):
-    """Body of POST /papers/{id}/decide."""
-
-    decision: Decision
+Decision = Literal["kept", "dismissed"]
 
 
 class PaperOut(BaseModel):

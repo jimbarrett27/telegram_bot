@@ -1,8 +1,8 @@
-"""Pushes triaged ``deep`` papers into the personal Zotero library (build step 7).
+"""Pushes triaged ``kept`` papers into the personal Zotero library (build step 7).
 
-Only a ``deep`` decision pushes to Zotero (``filed`` is Obsidian-only). The
-client and API key are resolved lazily so neither ``pyzotero`` nor GCP creds are
-needed for local/dev runs that leave Zotero unconfigured. Idempotency (skip if a
+A ``kept`` decision (and legacy ``deep``) pushes to Zotero. The client and API
+key are resolved lazily so neither ``pyzotero`` nor GCP creds are needed for
+local/dev runs that leave Zotero unconfigured. Idempotency (skip if a
 ``zotero_key`` already exists) is the caller's responsibility — see
 ``routing.py`` — so the step-8 retry loop is safe to run repeatedly.
 """
@@ -14,8 +14,8 @@ from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
 
-# Tag stamped on every pushed item, mirroring the Obsidian `triage/deep` tag.
-_DEEP_TAG = "triage/deep"
+# Tag stamped on every pushed item, mirroring the Obsidian `triage/kept` tag.
+_KEEP_TAG = "triage/kept"
 
 
 def _item_type(source_type: str) -> str:
@@ -69,7 +69,7 @@ def push_paper(paper: ArticleORM) -> str:
     template["title"] = paper.title
     template["abstractNote"] = paper.abstract or ""
     template["url"] = paper.url or ""
-    template["tags"] = [{"tag": _DEEP_TAG}]
+    template["tags"] = [{"tag": _KEEP_TAG}]
 
     creators = _creators(paper.authors)
     if creators:

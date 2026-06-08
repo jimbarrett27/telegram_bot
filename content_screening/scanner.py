@@ -67,12 +67,13 @@ def process_new_articles(
         # Best-effort: None on failure, never blocks ingestion.
         article.embedding = compute_article_embedding(article)
 
-        # Always insert (relevant ones enter the triage queue; the rest are kept
-        # for record-keeping with score 0). Guard the insert so a single stray
-        # duplicate (e.g. a dedup-key miss) can't abort the whole scan and drop
-        # the daily summary message.
+        # Always insert (relevant ones enter the triage queue as 'pending'; the
+        # rest are kept for record-keeping with status 'auto_rejected'). Guard
+        # the insert so a single stray duplicate (e.g. a dedup-key miss) can't
+        # abort the whole scan and drop the daily summary message.
+        status = "pending" if is_relevant else "auto_rejected"
         try:
-            article.id = insert_article(article)
+            article.id = insert_article(article, status=status)
         except IntegrityError:
             logger.warning(f"Skipping duplicate on insert: {article.external_id}")
             add_to_dedup_index(article, doi_set, title_set, id_set)

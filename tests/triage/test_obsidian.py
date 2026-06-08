@@ -26,7 +26,7 @@ def make_paper(**overrides) -> ArticleORM:
         llm_reasoning="Directly relevant to signal detection.",
         llm_tags=["signal-detection"],
         suggested_depth="deep",
-        status="deep",
+        status="kept",
         decided_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc).isoformat(),
         zotero_key=None,
         zotero_error=None,
@@ -56,24 +56,23 @@ def test_slugify_truncates_to_60_no_trailing_hyphen():
 
 def test_write_stub_path_and_frontmatter(tmp_path):
     rel = obsidian.write_stub(tmp_path, make_paper())
-    assert rel == "literature/inbox/2026-05-31-a-great-paper-about-things.md"
+    assert rel == "literature/inbox/unread/2026-05-31-a-great-paper-about-things.md"
 
     content = (tmp_path / rel).read_text()
     fm = parse_frontmatter(content)
     assert fm["title"] == "A Great Paper, About Things!"
     assert fm["authors"] == ["Ada Lovelace", "Alan Turing"]
-    assert fm["status"] == "to-read"  # 'deep' -> to-read
-    assert fm["tags"] == ["paper", "triage/deep"]
+    assert fm["status"] == "unread"  # 'kept' -> unread
+    assert fm["tags"] == ["paper", "triage/kept"]
     assert fm["zotero"] == ""
     assert "Why this surfaced:" in content
     assert "signal detection" in content
 
 
-def test_filed_status_maps_to_filed(tmp_path):
-    rel = obsidian.write_stub(tmp_path, make_paper(status="filed"))
-    fm = parse_frontmatter((tmp_path / rel).read_text())
-    assert fm["status"] == "filed"
-    assert fm["tags"] == ["paper", "triage/filed"]
+def test_stub_written_to_unread_subfolder(tmp_path):
+    """Stubs always land in .../unread/, never directly in the inbox root."""
+    rel = obsidian.write_stub(tmp_path, make_paper())
+    assert "/unread/" in rel
 
 
 def test_collision_gets_suffix(tmp_path):
@@ -97,8 +96,8 @@ def test_route_decision_writes_and_is_idempotent(tmp_path):
     # Second call must not rewrite or create a duplicate.
     routing.route_decision(paper, settings)
     assert paper.obsidian_path == first_path
-    inbox = tmp_path / "literature" / "inbox"
-    assert len(list(inbox.glob("*.md"))) == 1
+    unread = tmp_path / "literature" / "inbox" / "unread"
+    assert len(list(unread.glob("*.md"))) == 1
 
 
 def test_dismissed_has_no_side_effects(tmp_path):

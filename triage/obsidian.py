@@ -1,9 +1,10 @@
 """Writes Obsidian stub notes for triaged papers.
 
-A `deep` or `filed` decision produces a markdown stub in
-``<vault>/literature/inbox/<YYYY-MM-DD>-<slug>.md`` with frontmatter the rest of
-the vault can query, and the relevance reason as the body. Obsidian remains the
-editor — these are just filed stubs.
+A ``kept`` (or legacy ``deep``/``filed``) decision produces a markdown stub in
+``<vault>/literature/inbox/unread/<YYYY-MM-DD>-<slug>.md`` with frontmatter the
+rest of the vault can query, and the relevance reason as the body. Obsidian
+remains the editor — these are just filed stubs. The sibling ``read/`` subfolder
+is populated manually by the user; the app never writes or reads it.
 """
 
 import re
@@ -15,10 +16,13 @@ import yaml
 from content_screening.orm_models import ArticleORM
 
 DEFAULT_INBOX_SUBDIR = "literature/inbox"
+UNREAD_SUBDIR = "unread"
 SLUG_MAX_LEN = 60
 
 # Obsidian frontmatter `status` per decision.
-_STATUS_BY_DECISION = {"deep": "to-read", "filed": "filed"}
+# Legacy entries (`deep`, `filed`) remain so half-routed old rows still render
+# correctly; new decisions use `kept` → `unread`.
+_STATUS_BY_DECISION = {"kept": "unread", "deep": "to-read", "filed": "filed"}
 
 
 def slugify(title: str) -> str:
@@ -70,7 +74,7 @@ def write_stub(
     creates a fresh file; idempotency (skip if already written) is the caller's
     responsibility via ``ArticleORM.obsidian_path``.
     """
-    inbox = vault_root / inbox_subdir
+    inbox = vault_root / inbox_subdir / UNREAD_SUBDIR
     inbox.mkdir(parents=True, exist_ok=True)
 
     date = _iso_to_date(paper.decided_at) if paper.decided_at else (

@@ -16,9 +16,11 @@ from util.logging_util import setup_logger
 
 logger = setup_logger(__name__)
 
-# `deep` → Zotero + Obsidian; `filed` → Obsidian only; `dismissed` → nothing.
-_OBSIDIAN_DECISIONS = {"deep", "filed"}
-_ZOTERO_DECISIONS = {"deep"}
+# `kept` → Zotero + Obsidian; legacy `deep` and `filed` are preserved here so
+# any half-routed row written before the migration can still complete routing.
+# `dismissed` → nothing.
+_ZOTERO_DECISIONS = {"kept", "deep"}
+_OBSIDIAN_DECISIONS = {"kept", "deep", "filed"}
 
 # Upper bound on the exponential backoff between retries.
 _RETRY_CAP_SECONDS = 3600
@@ -26,7 +28,7 @@ _RETRY_CAP_SECONDS = 3600
 
 def route_decision(paper: ArticleORM, settings: Settings) -> None:
     """Perform the external side effects for a freshly-decided paper."""
-    # Zotero first so a fresh `deep` stub can embed the returned item key.
+    # Zotero first so a fresh `kept` stub can embed the returned item key.
     if paper.status in _ZOTERO_DECISIONS:
         _route_zotero(paper, settings)
     if paper.status in _OBSIDIAN_DECISIONS:

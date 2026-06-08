@@ -136,13 +136,13 @@ def add_to_dedup_index(article: Article, doi_set: set, title_set: set, id_set: s
         title_set.add(nt)
 
 
-def insert_article(article: Article) -> int:
+def insert_article(article: Article, status: str = "pending") -> int:
     """Insert a new article into the database.
 
     Returns the article id.
     """
     discovered_at = article.discovered_at or int(time.time())
-    orm = article_dataclass_to_orm(article, discovered_at)
+    orm = article_dataclass_to_orm(article, discovered_at, status=status)
 
     with get_session() as session:
         session.add(orm)
