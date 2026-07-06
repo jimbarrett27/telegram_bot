@@ -1,0 +1,37 @@
+Below you will find titles, summaries and links for 3 news stories from today.
+I would like you to create a {{ panel_width }} pixel wide by {{ panel_height }} pixel high section of a
+"news tapestry", inspired by the Bayeux tapestry, representing each of these news stories. You can
+use as much detail as you think appropriate, but you should aim to use at least 50 elements. The 3
+images should blend into one coherent section of the tapestry, using a unified background colour
+and mixing elements from each. You should not use any text to label things in the SVG, everything
+should be visual. You should plan out how you will connect the elements into one image before you
+start to generate the SVG.
+
+This panel is one continuous section of a much longer tapestry: another section will be joined
+seamlessly above it and another below it, with no visible break between them. Your background must
+fill the entire {{ panel_width }}x{{ panel_height }} canvas and bleed right off all four edges. Do NOT draw
+any borders, frames, outlines, decorative bands, header/footer stripes or empty margins anywhere --
+especially not along the top or bottom edges. Instead, let the background and imagery run straight off
+the top and bottom edges so they flow into the neighbouring sections and the joins disappear.
+
+{% for story in stories %}
+Title {{ loop.index }}: {{ story.title }}
+Summary {{ loop.index }}: {{ story.summary }}
+Link {{ loop.index }}: {{ story.link }}
+{% endfor %}
+{% if previous_svg %}
+Your panel sits directly beneath yesterday's panel and the two overlap slightly where they meet, so
+the join between them must be completely invisible. Subsequent code handles the actual merging -- you
+don't need to copy elements or offset your coordinates, just draw your own {{ panel_width }}x{{ panel_height }}
+section. Match the background colour, tones and motifs along your TOP edge to those along the bottom
+edge of yesterday's SVG, and let that imagery continue downward into your panel, so the two blend into
+one seamless flowing scene rather than two stacked pictures. Yesterday's SVG is:
+{{ previous_svg }}
+{% endif %}
+Return your answer in pure json with two keys like so;
+{
+    "plan": "Write your plan for how to generate the image here...",
+    "svg_string": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{{ panel_width }}\" height=\"{{ panel_height }}\" viewBox=\"0 0 {{ panel_width }} {{ panel_height }}\"> ...your elements... </svg>"
+}
+
+Do not return any markdown fencing for the json, just the JSON itself.
