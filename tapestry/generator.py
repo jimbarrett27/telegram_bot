@@ -13,7 +13,7 @@ from tapestry.svg import PANEL_HEIGHT, PANEL_WIDTH, extract_svg, stitch_svgs
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 STORIES_PER_PANEL = 3
 PROMPT_TEMPLATE = str(Path(__file__).parent / "prompts" / "tapestry_panel.jinja2")
 

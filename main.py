@@ -21,6 +21,7 @@ from memes.daily_hn_meme import send_daily_hn_meme
 from minecraft.react_to_logs import react_to_logs as react_to_minecraft_logs
 from minecraft.healthcheck import run_healthcheck, run_on_demand_check, run_daily_summary
 from content_screening.scanner import run_full_scan, format_scan_summary
+from tapestry.daily import daily_tapestry_task
 from telegram_bot.telegram_bot import TelegramBot
 from util.logging_util import setup_logger, log_telegram_message_received
 from util.timezone import stockholm_time
@@ -192,6 +193,8 @@ def build_minecraft_app() -> Application:
         # Daily paper feed scan → one summary message (triage replaces the
         # old per-paper Telegram notifications).
         app.job_queue.run_daily(daily_paper_scan_task, time=stockholm_time(8, 0))
+        # Daily news-tapestry panel → generated + uploaded to GCS for the website.
+        app.job_queue.run_daily(daily_tapestry_task, time=stockholm_time(8, 30))
     else:
         logger.warning("JobQueue not available - daily paper scan disabled.")
 
