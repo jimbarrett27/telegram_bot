@@ -7,12 +7,13 @@ and mixing elements from each. You should not use any text to label things in th
 should be visual. You should plan out how you will connect the elements into one image before you
 start to generate the SVG.
 
-This panel is one continuous section of a much longer tapestry: another section will be joined
-seamlessly above it and another below it, with no visible break between them. Your background must
-fill the entire {{ panel_width }}x{{ panel_height }} canvas and bleed right off all four edges. Do NOT draw
-any borders, frames, outlines, decorative bands, header/footer stripes or empty margins anywhere --
-especially not along the top or bottom edges. Instead, let the background and imagery run straight off
-the top and bottom edges so they flow into the neighbouring sections and the joins disappear.
+This panel is one continuous section of a much longer vertical tapestry: another section will be
+joined directly below it{% if previous_svg %}, and yesterday's section sits directly above it{% endif %},
+with no visible break between them. Paint a woven background that bleeds right off the LEFT, RIGHT and
+BOTTOM edges. Do NOT draw any borders, frames, outlines, decorative bands, header/footer stripes or
+empty margins. Do NOT draw any horizontal line, ground-line, horizon, fence, wire or other full-width
+horizontal element within {{ overlap }} pixels of the top or bottom edge -- those bands are where the
+neighbouring sections meet, and any horizontal element there turns into a visible seam.
 
 {% for story in stories %}
 Title {{ loop.index }}: {{ story.title }}
@@ -20,13 +21,21 @@ Summary {{ loop.index }}: {{ story.summary }}
 Link {{ loop.index }}: {{ story.link }}
 {% endfor %}
 {% if previous_svg %}
-Your panel sits directly beneath yesterday's panel and the two overlap slightly where they meet, so
-the join between them must be completely invisible. Subsequent code handles the actual merging -- you
-don't need to copy elements or offset your coordinates, just draw your own {{ panel_width }}x{{ panel_height }}
-section. Match the background colour, tones and motifs along your TOP edge to those along the bottom
-edge of yesterday's SVG, and let that imagery continue downward into your panel, so the two blend into
-one seamless flowing scene rather than two stacked pictures. Yesterday's SVG is:
+Your section is laid directly on top of yesterday's, overlapping it by the top {{ overlap }} pixels of
+your canvas (y = 0 to y = {{ overlap }}). That overlap is exactly what hides the join, so it is critical
+that you paint NO background whatsoever in that top band: no base fill, no tints, no gradients, no
+bands, no shading -- leave every pixel with y < {{ overlap }} fully transparent, so yesterday's artwork
+shows straight through it unchanged. Begin your woven background rectangle at y = {{ overlap }} (not at
+the top of the canvas) and run it down and off the bottom edge, using the SAME base colour as the
+bottom edge of yesterday's section so the two meet invisibly along that line. You SHOULD let some
+FOREGROUND subjects (figures, animals, banners, objects, smoke, birds) rise up through the transparent
+top band and overlap yesterday's scene, so the two days physically interlock into one flowing tapestry
+rather than two stacked pictures. Do not copy yesterday's elements or offset your coordinates -- just
+draw your own {{ panel_width }}x{{ panel_height }} section following these rules. Yesterday's SVG is:
 {{ previous_svg }}
+{% else %}
+Since this is the very first section, there is nothing above it: fill the whole canvas with the woven
+background and let it bleed off the top edge as well as the sides and bottom.
 {% endif %}
 Return your answer in pure json with two keys like so;
 {

@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from llm.llm_util import get_llm_response
-from tapestry.svg import PANEL_HEIGHT, PANEL_WIDTH, extract_svg, stitch_svgs
+from tapestry.svg import OVERLAP, PANEL_HEIGHT, PANEL_WIDTH, extract_svg, stitch_svgs
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ def generate_panel(stories, previous_svg: str = None, model: str = DEFAULT_MODEL
         "previous_svg": previous_svg,
         "panel_width": PANEL_WIDTH,
         "panel_height": PANEL_HEIGHT,
+        "overlap": OVERLAP,
     }
     content = get_llm_response(PROMPT_TEMPLATE, params, model)
     return extract_svg(content)

@@ -19,6 +19,15 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 LOCATION = "EU"
 PUBLIC_ROLE = "roles/storage.objectViewer"
 
+# The website fetches index.json / panels/*.json from the browser via XHR, which
+# is CORS-gated even though the objects are public-read. Allow cross-origin GETs.
+CORS_RULE = {
+    "origin": ["*"],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600,
+}
+
 
 def main() -> None:
     client = storage.Client(project=PROJECT_ID)
@@ -41,6 +50,13 @@ def main() -> None:
         policy.bindings.append({"role": PUBLIC_ROLE, "members": {"allUsers"}})
         bucket.set_iam_policy(policy)
         print("Granted allUsers objectViewer (public read)")
+
+    if bucket.cors == [CORS_RULE]:
+        print("CORS already configured")
+    else:
+        bucket.cors = [CORS_RULE]
+        bucket.patch()
+        print("Configured CORS (GET from any origin)")
 
 
 if __name__ == "__main__":
