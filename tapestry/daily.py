@@ -15,11 +15,11 @@ from telegram.ext import ContextTypes
 
 from tapestry import storage
 from tapestry.generator import (
-    DEFAULT_MODEL,
     PROMPT_TEMPLATE,
     STORIES_PER_PANEL,
     generate_panel,
 )
+from tapestry.models import pick_model
 from tapestry.news import fetch_bbc_stories
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def select_stories(exclude_links: set[str] = frozenset()) -> list[dict]:
     return chosen
 
 
-def generate_next_panel(day: str | None = None, model: str = DEFAULT_MODEL) -> str | None:
+def generate_next_panel(day: str | None = None, model: str | None = None) -> str | None:
     """Generate the next tapestry panel and store it in GCS.
 
     ``day`` defaults to today (YYYY-MM-DD). Returns the date written, or ``None``
@@ -51,8 +51,13 @@ def generate_next_panel(day: str | None = None, model: str = DEFAULT_MODEL) -> s
     used by the previous panel are excluded so consecutive days don't repeat a
     story, and the prompt template used is saved alongside the panel for
     provenance.
+
+    ``model`` defaults to a per-day random pick from OpenRouter's top SVG models
+    (see :func:`tapestry.models.pick_model`); the model actually used and its
+    stated plan are recorded on the panel.
     """
     day = day or date.today().isoformat()
+    model = model or pick_model(day)
     index = storage.read_index()
 
     if index and day in index["dates"]:
@@ -67,17 +72,17 @@ def generate_next_panel(day: str | None = None, model: str = DEFAULT_MODEL) -> s
         previous_links = {s["link"] for s in previous["stories"]}
 
     stories = select_stories(exclude_links=previous_links)
-    svg = generate_panel(stories, previous_svg=previous_svg, model=model)
+    panel = generate_panel(stories, previous_svg=previous_svg, model=model)
 
-    panel = {
+    storage.write_panel({
         "date": day,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "model": model,
+        "plan": panel.plan,
         "prompt_template": Path(PROMPT_TEMPLATE).read_text(),
         "stories": [dict(s) for s in stories],
-        "svg": svg,
-    }
-    storage.write_panel(panel)
+        "svg": panel.svg,
+    })
     storage.update_index(day)
     return day
 

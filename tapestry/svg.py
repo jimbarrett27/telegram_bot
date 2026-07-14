@@ -7,6 +7,7 @@ in :mod:`tapestry.generator`.
 
 import json
 import re
+import xml.etree.ElementTree as ET
 
 # --- Panel geometry -------------------------------------------------------
 # Every daily panel is drawn at this size. Panels overlap by OVERLAP pixels:
@@ -40,26 +41,111 @@ def clean_svg(svg: str) -> str:
     return escape_bare_amps(svg.strip())
 
 
-def extract_svg(content: str) -> str:
-    """Pull a cleaned SVG string out of the model's message content.
+def extract_panel(content: str) -> tuple[str, str | None]:
+    """Pull the cleaned SVG *and* the model's plan out of its message content.
 
-    The model is asked for JSON with an ``svg_string`` key, but this tolerates
-    stray markdown fences and falls back to grabbing a raw ``<svg>...</svg>``
-    block if the JSON can't be parsed.
+    The model is asked for JSON with ``svg_string`` and ``plan`` keys. This
+    tolerates stray markdown fences, and falls back to grabbing a raw
+    ``<svg>...</svg>`` block (with no plan) if the JSON can't be parsed.
+
+    Returns ``(svg, plan)``; ``plan`` is ``None`` when it wasn't provided (e.g.
+    the raw-block fallback).
     """
     text = content.strip()
     text = _FENCE_START_RE.sub("", text)
     text = _FENCE_END_RE.sub("", text)
 
+    plan = None
     try:
-        svg = json.loads(text)["svg_string"]
+        parsed = json.loads(text)
+        svg = parsed["svg_string"]
+        plan = parsed.get("plan")
     except (json.JSONDecodeError, KeyError, TypeError):
         match = _SVG_BLOCK_RE.search(text)
         if not match:
             raise ValueError("No SVG found in model response")
         svg = match.group(0)
 
-    return clean_svg(svg)
+    return clean_svg(svg), plan
+
+
+def extract_svg(content: str) -> str:
+    """Pull just the cleaned SVG string out of the model's message content.
+
+    Thin wrapper over :func:`extract_panel` for callers that don't need the plan.
+    """
+    return extract_panel(content)[0]
+
+
+# --- Structural validation ------------------------------------------------
+# The website renders these panels in a browser (very lenient), so we don't
+# rasterise here -- that would need a native renderer whose coverage differs
+# from the browser's and would add a new way for the daily job to fail. Instead
+# we do dependency-free structural checks that catch the failure modes actually
+# seen from LLMs: truncated/junk output (not well-formed XML), panels that are
+# nearly empty (truncated early), and references to ids that were never defined
+# (a blank gradient/filter). ``svg_problems`` returns a human-readable list so
+# the retry log can say *why* a panel was rejected.
+
+# Elements that actually put ink on the canvas. A valid panel should have a
+# healthy number of these; the prompt asks for >= 50, so requiring a handful is
+# very safe and only rejects badly truncated output.
+_DRAWABLE_TAGS = frozenset({
+    "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "text", "image", "use",
+})
+_MIN_DRAWABLE_ELEMENTS = 8
+
+_URL_REF_RE = re.compile(r"url\(\s*#([^)\s]+)\s*\)")
+_HREF_REF_RE = re.compile(r'(?:xlink:)?href\s*=\s*"#([^"]+)"')
+
+
+def _local_name(tag: str) -> str:
+    """Strip any ``{namespace}`` prefix ElementTree adds to a tag name."""
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def svg_problems(svg: str) -> list[str]:
+    """Return a list of structural problems with ``svg`` (empty list == valid).
+
+    Checks, in order: it parses as XML, its root is an ``<svg>`` element, it has
+    enough drawable elements to be a real panel, and every ``url(#id)`` /
+    ``href="#id"`` reference points to an id defined in the document.
+    """
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as exc:
+        return [f"not well-formed XML: {exc}"]
+
+    if _local_name(root.tag) != "svg":
+        return [f"root element is <{_local_name(root.tag)}>, not <svg>"]
+
+    problems: list[str] = []
+
+    elements = list(root.iter())
+    drawable = sum(1 for el in elements if _local_name(el.tag) in _DRAWABLE_TAGS)
+    if drawable < _MIN_DRAWABLE_ELEMENTS:
+        problems.append(
+            f"only {drawable} drawable element(s) (need >= {_MIN_DRAWABLE_ELEMENTS}); "
+            "likely truncated or near-empty"
+        )
+
+    defined_ids = {
+        el.get("id") for el in elements if el.get("id") is not None
+    }
+    referenced = set(_URL_REF_RE.findall(svg)) | set(_HREF_REF_RE.findall(svg))
+    dangling = sorted(referenced - defined_ids)
+    if dangling:
+        problems.append(
+            "references undefined id(s): " + ", ".join(dangling)
+        )
+
+    return problems
+
+
+def is_valid_svg(svg: str) -> bool:
+    """True if ``svg`` has no structural problems (see :func:`svg_problems`)."""
+    return not svg_problems(svg)
 
 
 # --- Stitching panels into one tapestry -----------------------------------

@@ -10,8 +10,11 @@ from tapestry.svg import (
     OVERLAP,
     PANEL_HEIGHT,
     escape_bare_amps,
+    extract_panel,
     extract_svg,
+    is_valid_svg,
     stitch_svgs,
+    svg_problems,
 )
 
 # A panel that (a) is NOT the canonical size, and (b) reuses id="bg" — the two
@@ -55,6 +58,63 @@ def test_extract_svg_falls_back_to_raw_block():
 def test_extract_svg_raises_without_svg():
     with pytest.raises(ValueError):
         extract_svg("there is no svg in this response")
+
+
+def test_extract_panel_returns_plan_from_json():
+    resp = json.dumps({"plan": "draw three ships", "svg_string": PANEL})
+    svg, plan = extract_panel(resp)
+    assert plan == "draw three ships"
+    assert svg.startswith("<svg")
+
+
+def test_extract_panel_plan_is_none_for_raw_block():
+    svg, plan = extract_panel("here you go:\n" + PANEL)
+    assert plan is None
+    assert svg.startswith("<svg")
+
+
+# A structurally healthy panel: well-formed, >= 8 drawable elements, and its one
+# url(#..) reference resolves to a defined id.
+VALID_PANEL = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200" '
+    'viewBox="0 0 1600 200">'
+    '<defs><linearGradient id="bg"><stop offset="0%" stop-color="#123"/></linearGradient></defs>'
+    '<rect width="1600" height="200" fill="url(#bg)"/>'
+    + "".join(f'<circle cx="{i*10}" cy="50" r="4"/>' for i in range(10))
+    + "</svg>"
+)
+
+
+def test_valid_panel_has_no_problems():
+    assert svg_problems(VALID_PANEL) == []
+    assert is_valid_svg(VALID_PANEL)
+
+
+def test_malformed_xml_is_rejected():
+    problems = svg_problems('<svg><rect width="10"</svg>')  # unclosed tag
+    assert problems and "well-formed" in problems[0]
+    assert not is_valid_svg('<svg><rect width="10"</svg>')
+
+
+def test_non_svg_root_is_rejected():
+    problems = svg_problems("<div><p>hi</p></div>")
+    assert any("not <svg>" in p for p in problems)
+
+
+def test_nearly_empty_panel_is_rejected():
+    thin = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+    assert any("drawable" in p for p in svg_problems(thin))
+
+
+def test_dangling_reference_is_rejected():
+    # 8+ drawables so only the dangling ref should trip it.
+    bad = (
+        '<svg xmlns="http://www.w3.org/2000/svg">'
+        + "".join(f'<circle cx="{i}" cy="1" r="1"/>' for i in range(9))
+        + '<rect fill="url(#ghost)" width="10" height="10"/></svg>'
+    )
+    problems = svg_problems(bad)
+    assert any("ghost" in p for p in problems)
 
 
 def test_stitch_geometry_offsets_and_scale():
