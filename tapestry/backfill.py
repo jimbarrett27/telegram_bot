@@ -18,13 +18,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tapestry import storage
-from tapestry.generator import DEFAULT_MODEL, PROMPT_TEMPLATE, generate_panel
+from tapestry.generator import PROMPT_TEMPLATE, generate_panel
+from tapestry.models import pick_model
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def main(model: str = DEFAULT_MODEL) -> None:
+def main(model: str | None = None) -> None:
+    """Regenerate every stored panel's artwork, reusing each day's stories.
+
+    ``model`` pins a single model for the whole run; by default each day gets its
+    own per-day random pick (see :func:`tapestry.models.pick_model`), matching how
+    the daily job now chooses. The model used and its plan are recorded per panel.
+    """
     index = storage.read_index()
     if not index or not index["dates"]:
         print("No panels to backfill")
@@ -36,17 +43,19 @@ def main(model: str = DEFAULT_MODEL) -> None:
 
     for date in dates:
         stories = storage.read_panel(date)["stories"]
-        svg = generate_panel(stories, previous_svg=previous_svg, model=model)
+        day_model = model or pick_model(date)
+        panel = generate_panel(stories, previous_svg=previous_svg, model=day_model)
         storage.write_panel({
             "date": date,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "model": model,
+            "model": day_model,
+            "plan": panel.plan,
             "prompt_template": prompt_template,
             "stories": stories,
-            "svg": svg,
+            "svg": panel.svg,
         })
-        previous_svg = svg
-        print(f"Regenerated panel for {date}")
+        previous_svg = panel.svg
+        print(f"Regenerated panel for {date} with {day_model}")
 
     print(f"Backfill complete: {len(dates)} panel(s)")
 
