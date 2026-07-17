@@ -1,36 +1,46 @@
-"""One-off: regenerate every existing tapestry panel with the current prompt.
+"""One-off: regenerate stored tapestry panels' artwork with the current model/prompt.
 
-Re-runs the generator over the panels already in GCS, reusing each day's stored
+Re-runs the generator over panels already in GCS, reusing each day's stored
 stories so only the *artwork* changes (same news, new rendering). Panels are
-regenerated oldest-first and each one after the first is given the freshly
-regenerated previous panel as its ``previous_svg``, so the new seam rules
-(transparent top overlap, interlocking foreground) actually take effect across
-days.
+regenerated oldest-first and each one is given the freshly regenerated previous
+panel as its ``previous_svg``, so the seams actually join across the run.
 
-Overwrites the stored panels in place. Safe to re-run. Needs the same GCP + LLM
-credentials as the daily job:
+``--since`` regenerates only the tail of the tapestry, which is the usual case:
+the first regenerated day is seeded with the *stored* SVG of the last day being
+kept, so the new run stitches onto the existing panels at that seam instead of
+starting from a blank slate.
 
-    uv run python -m tapestry.backfill
+Overwrites the canonical panels in place, but first copies the artwork it's
+replacing into ``alt/`` (see :mod:`tapestry.storage`), so a model experiment can
+always be looked at again -- or reverted -- afterwards. Safe to re-run. Needs the
+same GCP + LLM credentials as the daily job:
+
+    uv run python -m tapestry.backfill --since 2026-07-14
 """
 
+import argparse
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from tapestry import storage
-from tapestry.generator import PROMPT_TEMPLATE, generate_panel
-from tapestry.models import pick_model
+from tapestry.generator import DEFAULT_MODEL, PROMPT_TEMPLATE, generate_panel
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def main(model: str | None = None) -> None:
-    """Regenerate every stored panel's artwork, reusing each day's stories.
+def main(model: str = DEFAULT_MODEL, since: str | None = None, archive: bool = True) -> None:
+    """Regenerate stored panels' artwork with ``model``, reusing each day's stories.
 
-    ``model`` pins a single model for the whole run; by default each day gets its
-    own per-day random pick (see :func:`tapestry.models.pick_model`), matching how
-    the daily job now chooses. The model used and its plan are recorded per panel.
+    ``since`` (YYYY-MM-DD) limits the run to panels on or after that date; by
+    default every stored panel is regenerated.
+
+    Unless ``archive`` is false, each panel being replaced is first copied into
+    ``alt/`` (keyed by the model that drew it) so the artwork it's overwriting
+    stays viewable. A panel already drawn by ``model`` isn't archived -- there'd
+    be nothing to distinguish the copy from its replacement -- which also makes
+    re-running a backfill idempotent.
     """
     index = storage.read_index()
     if not index or not index["dates"]:
@@ -38,27 +48,57 @@ def main(model: str | None = None) -> None:
         return
 
     dates = sorted(index["dates"])  # oldest first: the order the seams join in
-    prompt_template = Path(PROMPT_TEMPLATE).read_text()
-    previous_svg = None
+    targets = [d for d in dates if since is None or d >= since]
+    if not targets:
+        print(f"No panels on or after {since}; nothing to backfill")
+        return
 
-    for date in dates:
-        stories = storage.read_panel(date)["stories"]
-        day_model = model or pick_model(date)
-        panel = generate_panel(stories, previous_svg=previous_svg, model=day_model)
+    # Seed from the last panel we're keeping so the first regenerated day joins
+    # the existing tapestry at that seam. None => regenerating from the very top.
+    kept = [d for d in dates if d < targets[0]]
+    previous_svg = storage.read_panel(kept[-1])["svg"] if kept else None
+    if kept:
+        print(f"Seeding from kept panel {kept[-1]}")
+
+    prompt_template = Path(PROMPT_TEMPLATE).read_text()
+
+    for date in targets:
+        existing = storage.read_panel(date)
+        stories = existing["stories"]
+
+        if archive and existing.get("model") != model:
+            variant = storage.archive_panel(date)
+            print(f"Archived {date}'s {existing.get('model')} panel as alt '{variant}'")
+
+        panel = generate_panel(stories, previous_svg=previous_svg, model=model)
         storage.write_panel({
             "date": date,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "model": day_model,
+            "model": model,
             "plan": panel.plan,
             "prompt_template": prompt_template,
             "stories": stories,
             "svg": panel.svg,
         })
         previous_svg = panel.svg
-        print(f"Regenerated panel for {date} with {day_model}")
+        print(f"Regenerated panel for {date} with {model}")
 
-    print(f"Backfill complete: {len(dates)} panel(s)")
+    print(f"Backfill complete: {len(targets)} panel(s)")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--since", help="only regenerate panels on or after this date (YYYY-MM-DD)"
+    )
+    parser.add_argument(
+        "--model", default=DEFAULT_MODEL, help=f"model to draw with (default: {DEFAULT_MODEL})"
+    )
+    parser.add_argument(
+        "--no-archive",
+        dest="archive",
+        action="store_false",
+        help="overwrite panels without keeping the replaced artwork as an alternate",
+    )
+    args = parser.parse_args()
+    main(model=args.model, since=args.since, archive=args.archive)

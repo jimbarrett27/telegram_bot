@@ -48,8 +48,10 @@ def generate_panel(
 
     The model's output is structurally validated (see
     :func:`tapestry.svg.svg_problems`); if a panel is malformed the same model is
-    retried up to ``max_attempts`` times before giving up with a ``RuntimeError``.
-    Returns a :class:`Panel` with the cleaned SVG and the model's plan.
+    retried up to ``max_attempts`` times, with the problem fed back into the
+    prompt so the retry knows what to fix, before giving up with a
+    ``RuntimeError``. Returns a :class:`Panel` with the cleaned SVG and the
+    model's plan.
     """
     params = {
         "stories": [dict(s) for s in stories[:STORIES_PER_PANEL]],
@@ -59,19 +61,17 @@ def generate_panel(
         "overlap": OVERLAP,
     }
 
-    last_problem = "no attempts made"
+    last_problem = None
     for attempt in range(1, max_attempts + 1):
-        content = get_llm_response(PROMPT_TEMPLATE, params, model)
+        content = get_llm_response(
+            PROMPT_TEMPLATE, {**params, "problem": last_problem}, model
+        )
         try:
             svg, plan = extract_panel(content)
+            problems = svg_problems(svg)
         except ValueError as exc:
-            last_problem = str(exc)
-            logger.warning(
-                "Panel attempt %d/%d with %s: %s", attempt, max_attempts, model, exc
-            )
-            continue
+            problems = [str(exc)]
 
-        problems = svg_problems(svg)
         if not problems:
             return Panel(svg=svg, plan=plan)
 

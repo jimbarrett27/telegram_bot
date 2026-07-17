@@ -42,17 +42,11 @@ def test_escape_bare_amps_only_touches_bare_amps():
     assert escape_bare_amps(kept) == kept
 
 
-def test_extract_svg_from_fenced_json():
-    resp = "```json\n" + json.dumps({"plan": "p", "svg_string": PANEL}) + "\n```"
-    svg = extract_svg(resp)
+def test_extract_svg_escapes_bare_amps():
+    svg = extract_svg("PLAN: p\n" + PANEL)
     assert svg.startswith("<svg")
     assert "p=1&amp;q=2" in svg  # bare & escaped
     assert not BARE_AMP_RE.search(svg)  # nothing left unescaped
-
-
-def test_extract_svg_falls_back_to_raw_block():
-    resp = "sure, here you go:\n" + PANEL + "\nhope that helps"
-    assert extract_svg(resp).startswith("<svg")
 
 
 def test_extract_svg_raises_without_svg():
@@ -60,17 +54,32 @@ def test_extract_svg_raises_without_svg():
         extract_svg("there is no svg in this response")
 
 
-def test_extract_panel_returns_plan_from_json():
-    resp = json.dumps({"plan": "draw three ships", "svg_string": PANEL})
-    svg, plan = extract_panel(resp)
+def test_extract_panel_reads_plan_and_svg_from_prose():
+    svg, plan = extract_panel("PLAN: draw three ships\n\n" + PANEL)
     assert plan == "draw three ships"
     assert svg.startswith("<svg")
 
 
-def test_extract_panel_plan_is_none_for_raw_block():
-    svg, plan = extract_panel("here you go:\n" + PANEL)
+def test_extract_panel_tolerates_fenced_svg_after_the_plan():
+    svg, plan = extract_panel("PLAN: draw three ships\n```svg\n" + PANEL + "\n```")
+    assert plan == "draw three ships"
+    assert svg.startswith("<svg")
+
+
+def test_extract_panel_plan_is_none_without_preamble():
+    svg, plan = extract_panel(PANEL)
     assert plan is None
     assert svg.startswith("<svg")
+
+
+def test_extract_panel_still_decodes_json_if_a_model_ignores_the_format():
+    # The SVG's quotes arrive backslash-escaped inside the JSON string; decoding
+    # via json (not the raw-block regex) is what unescapes them back to markup.
+    resp = "```json\n" + json.dumps({"plan": "p", "svg_string": PANEL}) + "\n```"
+    svg, plan = extract_panel(resp)
+    assert plan == "p"
+    assert "\\" not in svg  # unescaped back to real markup
+    minidom.parseString(svg)  # and therefore well-formed
 
 
 # A structurally healthy panel: well-formed, >= 8 drawable elements, and its one
