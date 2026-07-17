@@ -25,6 +25,20 @@ _SVG_CLOSE_RE = re.compile(r"</svg\s*>", re.IGNORECASE)
 _SVG_BLOCK_RE = re.compile(r"<svg\b.*</svg\s*>", re.IGNORECASE | re.DOTALL)
 _FENCE_START_RE = re.compile(r"^```(?:json|svg|xml)?\s*", re.IGNORECASE)
 _FENCE_END_RE = re.compile(r"\s*```$")
+_PLAN_LABEL_RE = re.compile(r"^\W*plan\W*:\s*", re.IGNORECASE)
+_FENCE_TRAILING_RE = re.compile(r"```(?:json|svg|xml)?\s*$", re.IGNORECASE)
+
+
+def _extract_plan(preamble: str) -> str | None:
+    """Read the model's plan out of the prose preceding its SVG block.
+
+    Strips the ``PLAN:`` label and any fence the model opened the SVG block with
+    (which lands at the *end* of the preamble). Returns ``None`` if there's no
+    prose there at all.
+    """
+    plan = _PLAN_LABEL_RE.sub("", preamble.strip())
+    plan = _FENCE_TRAILING_RE.sub("", plan)
+    return plan.strip() or None
 
 
 def escape_bare_amps(svg: str) -> str:
@@ -44,29 +58,33 @@ def clean_svg(svg: str) -> str:
 def extract_panel(content: str) -> tuple[str, str | None]:
     """Pull the cleaned SVG *and* the model's plan out of its message content.
 
-    The model is asked for JSON with ``svg_string`` and ``plan`` keys. This
-    tolerates stray markdown fences, and falls back to grabbing a raw
-    ``<svg>...</svg>`` block (with no plan) if the JSON can't be parsed.
+    The model is asked for a ``PLAN:`` paragraph followed by a raw
+    ``<svg>...</svg>`` block: keeping the SVG out of any JSON string avoids
+    making the model hand-escape a few hundred attribute quotes, which is a
+    reliable way to get back markup that isn't well-formed XML.
 
-    Returns ``(svg, plan)``; ``plan`` is ``None`` when it wasn't provided (e.g.
-    the raw-block fallback).
+    A JSON object with ``svg_string``/``plan`` keys is still accepted first, so a
+    model that ignores the format and escapes its SVG into JSON is decoded
+    properly rather than having the escaping treated as part of the markup. Stray
+    markdown fences are tolerated either way.
+
+    Returns ``(svg, plan)``; ``plan`` is ``None`` when it wasn't provided.
     """
     text = content.strip()
     text = _FENCE_START_RE.sub("", text)
     text = _FENCE_END_RE.sub("", text)
 
-    plan = None
     try:
         parsed = json.loads(text)
-        svg = parsed["svg_string"]
-        plan = parsed.get("plan")
+        return clean_svg(parsed["svg_string"]), parsed.get("plan")
     except (json.JSONDecodeError, KeyError, TypeError):
-        match = _SVG_BLOCK_RE.search(text)
-        if not match:
-            raise ValueError("No SVG found in model response")
-        svg = match.group(0)
+        pass
 
-    return clean_svg(svg), plan
+    match = _SVG_BLOCK_RE.search(text)
+    if not match:
+        raise ValueError("No SVG found in model response")
+
+    return clean_svg(match.group(0)), _extract_plan(text[:match.start()])
 
 
 def extract_svg(content: str) -> str:

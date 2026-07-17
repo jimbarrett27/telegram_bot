@@ -37,10 +37,17 @@ draw your own {{ panel_width }}x{{ panel_height }} section following these rules
 Since this is the very first section, there is nothing above it: fill the whole canvas with the woven
 background and let it bleed off the top edge as well as the sides and bottom.
 {% endif %}
-Return your answer in pure json with two keys like so;
-{
-    "plan": "Write your plan for how to generate the image here...",
-    "svg_string": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{{ panel_width }}\" height=\"{{ panel_height }}\" viewBox=\"0 0 {{ panel_width }} {{ panel_height }}\"> ...your elements... </svg>"
-}
+{% if problem %}
+Your previous attempt was rejected because the SVG it produced was invalid: {{ problem }}.
+Fix that problem and return a complete, valid SVG this time.
+{% endif %}
+Return your answer as plain text in exactly two parts, in this order:
 
-Do not return any markdown fencing for the json, just the JSON itself.
+PLAN: a short paragraph describing how you will connect the elements into one image.
+
+Then, on a new line, the SVG itself as a raw element, starting with `<svg` and ending with `</svg>`, like so;
+
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ panel_width }}" height="{{ panel_height }}" viewBox="0 0 {{ panel_width }} {{ panel_height }}"> ...your elements... </svg>
+
+Do not wrap your answer in JSON, do not escape the quotes in the SVG, and do not use any markdown
+fencing -- just the plan as plain prose, followed by the raw SVG element exactly as it should render.
