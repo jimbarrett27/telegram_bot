@@ -210,7 +210,11 @@ def build_minecraft_app() -> Application:
         # old per-paper Telegram notifications).
         app.job_queue.run_daily(daily_paper_scan_task, time=stockholm_time(7, 30))
         # Daily news-tapestry panel → generated + uploaded to GCS for the website.
-        app.job_queue.run_daily(daily_tapestry_task, time=stockholm_time(8, 30))
+        app.job_queue.run_daily(daily_tapestry_task, time=stockholm_time(9, 0))
+        # Self-heal: also try on startup so a restart during the daily run (e.g.
+        # an unattended-upgrade killing the bot mid-generation) doesn't skip the
+        # day. generate_next_panel is idempotent — a no-op if today already exists.
+        app.job_queue.run_once(daily_tapestry_task, when=60)
     else:
         logger.warning("JobQueue not available - daily paper scan disabled.")
 
