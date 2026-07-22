@@ -46,12 +46,13 @@ def generate_panel(
     keys. Pass ``previous_svg`` to ask the model to visually continue from
     yesterday's panel.
 
-    The model's output is structurally validated (see
-    :func:`tapestry.svg.svg_problems`); if a panel is malformed the same model is
-    retried up to ``max_attempts`` times, with the problem fed back into the
-    prompt so the retry knows what to fix, before giving up with a
-    ``RuntimeError``. Returns a :class:`Panel` with the cleaned SVG and the
-    model's plan.
+    Each attempt can fail two ways, and both cost one of ``max_attempts``: the
+    call to the model can fail outright (a transient OpenRouter/provider error),
+    or it can return a structurally invalid panel (see
+    :func:`tapestry.svg.svg_problems`). In the latter case the problem is fed
+    back into the next attempt's prompt so the retry knows what to fix. After
+    ``max_attempts`` we give up with a ``RuntimeError``. Returns a
+    :class:`Panel` with the cleaned SVG and the model's plan.
     """
     params = {
         "stories": [dict(s) for s in stories[:STORIES_PER_PANEL]],
@@ -61,11 +62,26 @@ def generate_panel(
         "overlap": OVERLAP,
     }
 
-    last_problem = None
+    last_problem = None   # fed back into the retry's prompt
+    last_failure = None   # why we gave up, whether or not a panel came back
     for attempt in range(1, max_attempts + 1):
-        content = get_llm_response(
-            PROMPT_TEMPLATE, {**params, "problem": last_problem}, model
-        )
+        try:
+            content = get_llm_response(
+                PROMPT_TEMPLATE, {**params, "problem": last_problem}, model
+            )
+        except Exception as exc:
+            # OpenRouter sometimes closes a request with an empty (whitespace
+            # keep-alive padding only) body when the upstream provider stalls,
+            # which surfaces here as a JSONDecodeError. That's transient, so
+            # spend an attempt on it rather than losing the day. There's no
+            # model output to critique, so last_problem is left untouched.
+            last_failure = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "Panel attempt %d/%d with %s never reached the model: %s",
+                attempt, max_attempts, model, last_failure,
+            )
+            continue
+
         try:
             svg, plan = extract_panel(content)
             problems = svg_problems(svg)
@@ -75,7 +91,7 @@ def generate_panel(
         if not problems:
             return Panel(svg=svg, plan=plan)
 
-        last_problem = "; ".join(problems)
+        last_problem = last_failure = "; ".join(problems)
         logger.warning(
             "Panel attempt %d/%d with %s produced an invalid SVG: %s",
             attempt, max_attempts, model, last_problem,
@@ -83,7 +99,7 @@ def generate_panel(
 
     raise RuntimeError(
         f"Failed to generate a valid SVG with {model} after {max_attempts} "
-        f"attempts (last problem: {last_problem})"
+        f"attempts (last failure: {last_failure})"
     )
 
 

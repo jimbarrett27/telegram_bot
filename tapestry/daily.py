@@ -24,6 +24,9 @@ from tapestry.news import fetch_bbc_stories
 
 logger = logging.getLogger(__name__)
 
+RETRY_DELAY_SECONDS = 30 * 60
+MAX_RUNS_PER_DAY = 3
+
 
 def select_stories(exclude_links: set[str] = frozenset()) -> list[dict]:
     """Pick this panel's stories from the BBC feed, skipping ``exclude_links``.
@@ -87,7 +90,13 @@ async def daily_tapestry_task(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     The generation does blocking network + LLM work, so it runs off the event
     loop. On success it pings the user via the notify bot.
+
+    A failed run reschedules itself (up to ``MAX_RUNS_PER_DAY`` runs in total) so
+    an outage at the scheduled hour doesn't cost the day -- ``generate_next_panel``
+    is idempotent, so a retry after a late success is a no-op. Once the retries
+    are spent the user is told, rather than the day just going quietly missing.
     """
+    run = (context.job.data or {}).get("run", 1) if context.job else 1
     try:
         day = await asyncio.to_thread(generate_next_panel)
         if day:
@@ -95,4 +104,13 @@ async def daily_tapestry_task(context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"🧵 News tapestry updated for {day}"
             )
     except Exception:
-        logger.exception("Failed to generate daily tapestry panel")
+        logger.exception("Failed to generate daily tapestry panel (run %d)", run)
+        if run < MAX_RUNS_PER_DAY and context.job_queue:
+            context.job_queue.run_once(
+                daily_tapestry_task, when=RETRY_DELAY_SECONDS, data={"run": run + 1}
+            )
+            logger.info("Retrying tapestry in %d minutes", RETRY_DELAY_SECONDS // 60)
+        else:
+            context.bot_data["minecraft_bot"].send_message_to_me(
+                f"🧵 News tapestry failed after {run} attempts — no panel today"
+            )
